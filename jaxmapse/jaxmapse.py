@@ -1,13 +1,11 @@
 import jax
 import jax.numpy as jnp
-import numpy as np
-from typing import Union, Callable, Dict, Any, Optional, Type
+from typing import Union, Callable, Type
 import os
 import json
 import importlib.util
-from jaxtyping import Float, Array
+from jaxtyping import Array
 from functools import partial
-from flax import struct
 
 # Import jaxace components
 from jaxace import (
@@ -15,14 +13,6 @@ from jaxace import (
     FlaxEmulator,
     maximin,
     inv_maximin
-)
-
-# Import background cosmology from jaxace
-from jaxace.background import (
-    w0waCDMCosmology,
-    a_z, E_a, E_z, dlogEdloga, Ωm_a,
-    D_z, f_z, D_f_z,
-    r_z, dA_z, dL_z
 )
 
 # Configure JAX for 64-bit precision

@@ -1,7 +1,6 @@
 import pytest
 import jax
 import jax.numpy as jnp
-import numpy as np
 import sys
 import os
 
@@ -39,8 +38,11 @@ def mock_linear_emu():
     in_minmax = jnp.tile(jnp.array([0.0, 1.0]), (n_in, 1))
     out_minmax = jnp.tile(jnp.array([0.0, 1.0]), (n_out, 1))
     
-    preprocessing = lambda x: x # Identity
-    postprocessing = lambda p, out, D, emu: out * D # Dummy physics
+    def preprocessing(x):
+        return x
+        
+    def postprocessing(p, out, D, emu):
+        return out * D
     
     return LinearPkEmulator(
         trained_emulator=flax_emu,
@@ -69,7 +71,8 @@ def mock_boost_emu():
     in_minmax = jnp.tile(jnp.array([0.0, 1.0]), (n_in, 1))
     out_minmax = jnp.tile(jnp.array([0.0, 1.0]), (n_out, 1))
     
-    postprocessing = lambda p, out, emu: out # Identity boost
+    def postprocessing(p, out, emu):
+        return out
     
     return NonLinearBoostPkEmulator(
         trained_emulator=flax_emu,
