@@ -1,6 +1,6 @@
 import jax
 import jax.numpy as jnp
-from typing import Union, Callable, Type
+from typing import Union, Callable, Type, Optional
 import os
 import json
 import importlib.util
