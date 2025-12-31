@@ -3,6 +3,7 @@ from jaxace.background import (
     D_z,
     E_a,
     E_z,
+    Ωm_a,
     a_z,
     dA_z,
     dL_z,
@@ -10,7 +11,6 @@ from jaxace.background import (
     f_z,
     r_z,
     w0waCDMCosmology,
-    Ωm_a,
 )
 
 from .jaxmapse import (

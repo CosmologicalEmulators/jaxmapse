@@ -2,33 +2,14 @@ import importlib.util
 import json
 import os
 from functools import partial
-from typing import Any, Callable, Dict, Optional, Type, Union
+from typing import Callable, Optional, Type, Union
 
-import flax.linen as nn
 import jax
 import jax.numpy as jnp
-import numpy as np
-from flax import struct
-from jaxtyping import Array, Float
 
 # Import jaxace components
 from jaxace import FlaxEmulator, init_emulator, inv_maximin, maximin
-
-# Import background cosmology from jaxace
-from jaxace.background import (
-    D_f_z,
-    D_z,
-    E_a,
-    E_z,
-    a_z,
-    dA_z,
-    dL_z,
-    dlogEdloga,
-    f_z,
-    r_z,
-    w0waCDMCosmology,
-    Ωm_a,
-)
+from jaxtyping import Array
 
 # Configure JAX for 64-bit precision
 jax.config.update("jax_enable_x64", True)
@@ -199,7 +180,9 @@ def load_emulator(
 
     weights = jnp.load(os.path.join(path, kwargs.get("weights_file", "weights.npy")))
     k_grid = jnp.load(os.path.join(path, kwargs.get("k_file", "k.npy")))
-    in_minmax = jnp.load(os.path.join(path, kwargs.get("inminmax_file", "inminmax.npy")))
+    in_minmax = jnp.load(
+        os.path.join(path, kwargs.get("inminmax_file", "inminmax.npy"))
+    )
     out_minmax = jnp.load(
         os.path.join(path, kwargs.get("outminmax_file", "outminmax.npy"))
     )

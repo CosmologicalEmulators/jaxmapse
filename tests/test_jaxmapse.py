@@ -1,14 +1,8 @@
-import os
-import sys
-
 import flax.linen as nn
 import jax
 import jax.numpy as jnp
 import pytest
 from jaxace import FlaxEmulator
-
-# Add local paths for dependencies
-sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "..")))
 
 from jaxmapse import LinearPkEmulator, NonLinearBoostPkEmulator, PkEmulator
 
