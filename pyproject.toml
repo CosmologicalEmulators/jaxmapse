@@ -10,7 +10,7 @@ packages = [{include = "jaxmapse"}]
 python = "^3.10"
 jax = "^0.4.0"
 jaxlib = "^0.4.0"
-flax = "^0.7.0"
+flax = "^0.10.0"
 numpy = "^2.2.6"
 jaxace = "^0.4.1"
 jaxtyping = "^0.2.0"
