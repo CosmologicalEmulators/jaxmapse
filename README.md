@@ -12,8 +12,7 @@ JAX-based implementation of the MAtter Power Spectrum Emulator (Mapse), mirrorin
 ## Installation
 
 ```bash
-# Since this relies on a local jaxace, ensure it is accessible
-pip install -e .
+pip install .
 ```
 
 ## Usage

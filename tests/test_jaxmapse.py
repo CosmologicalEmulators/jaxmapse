@@ -7,7 +7,6 @@ import os
 
 # Add local paths for dependencies
 sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
-sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), '../../jaxace')))
 
 from jaxmapse import LinearPkEmulator, NonLinearBoostPkEmulator, PkEmulator
 from jaxace import FlaxEmulator
