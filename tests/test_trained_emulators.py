@@ -4,18 +4,18 @@ import jax.numpy as jnp
 import jaxmapse
 from jaxmapse import w0waCDMCosmology, D_z
 
-# Helper to check if emulator is available
-def is_emulator_available(name):
-    return name in jaxmapse.trained_emulators and jaxmapse.trained_emulators[name] is not None
-
 EMULATOR_NAME = "trained_mapse_class_hmcode_mnuw0waOkcdm"
 
 @pytest.fixture
 def emulator_setup():
-    if not is_emulator_available(EMULATOR_NAME):
-        pytest.skip(f"Emulator {EMULATOR_NAME} not loaded")
+    # Strict check: Emulator MUST be present
+    if EMULATOR_NAME not in jaxmapse.trained_emulators:
+        pytest.fail(f"Emulator '{EMULATOR_NAME}' is not in the trained_emulators dictionary.")
     
     emu = jaxmapse.trained_emulators[EMULATOR_NAME]
+    
+    if emu is None:
+        pytest.fail(f"Emulator '{EMULATOR_NAME}' failed to load (value is None).")
     
     # Standard Planck 2018 + log10T_heat parameters
     # Order: [ln10As, ns, H0, ombh2, omch2, Mν, w0, wa, Omega_k, log10T_heat]
