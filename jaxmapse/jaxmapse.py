@@ -39,7 +39,7 @@ class LinearPkEmulator:
     def _get_Pk_single(self, input_params: Array, z: float, D: float) -> Array:
         """Core implementation for a single parameter set and single redshift."""
         preprocessed_input = self.preprocessing(input_params)
-        nn_input = jnp.append(preprocessed_input, z)
+        nn_input = jnp.insert(preprocessed_input, 0, z)
         norm_input = maximin(nn_input, self.in_minmax)
         norm_output = self.trained_emulator.run_emulator(norm_input)
         output = inv_maximin(norm_output, self.out_minmax)
@@ -78,36 +78,42 @@ class NonLinearBoostPkEmulator:
         k_grid: Array,
         in_minmax: Array,
         out_minmax: Array,
+        preprocessing: Callable,
         postprocessing: Callable,
     ):
         self.trained_emulator = trained_emulator
         self.k_grid = jnp.asarray(k_grid)
         self.in_minmax = jnp.asarray(in_minmax)
         self.out_minmax = jnp.asarray(out_minmax)
+        self.preprocessing = preprocessing
         self.postprocessing = postprocessing
 
-    def _get_Pk_single(self, input_params: Array, z: float) -> Array:
+    def _get_Pk_single(self, input_params: Array, z: float, D: float) -> Array:
         """Core implementation for a single parameter set and single redshift."""
-        nn_input = jnp.append(input_params, z)
+        preprocessed_input = self.preprocessing(input_params)
+        nn_input = jnp.insert(preprocessed_input, 0, z)
         norm_input = maximin(nn_input, self.in_minmax)
         norm_output = self.trained_emulator.run_emulator(norm_input)
         output = inv_maximin(norm_output, self.out_minmax)
-        return self.postprocessing(input_params, output, self)
+        return self.postprocessing(input_params, output, D, self)
 
-    def get_Pk(self, input_params: Array, z: Union[float, Array]) -> Array:
+    def get_Pk(self, input_params: Array, z: Union[float, Array], D: Union[float, Array] = None) -> Array:
         """Compute boost factor. Handles scalar or vector z via automatic vmap."""
+        if D is None:
+            D = jnp.ones_like(z) if jnp.ndim(z) > 0 else 1.0
+
         if not hasattr(self, "_jit_get_Pk"):
 
             @partial(jax.jit, static_argnums=(0,))
-            def _jit_get_Pk(self, params, z):
+            def _jit_get_Pk(self, params, z, D):
                 if jnp.ndim(z) == 0:
-                    return self._get_Pk_single(params, z)
+                    return self._get_Pk_single(params, z, D)
                 else:
-                    return jax.vmap(self._get_Pk_single, in_axes=(None, 0))(params, z)
+                    return jax.vmap(self._get_Pk_single, in_axes=(None, 0, 0))(params, z, D)
 
             self._jit_get_Pk = _jit_get_Pk
 
-        return self._jit_get_Pk(self, input_params, z)
+        return self._jit_get_Pk(self, input_params, z, D)
 
 
 class PkEmulator:
@@ -134,7 +140,7 @@ class PkEmulator:
             @partial(jax.jit, static_argnums=(0,))
             def _jit_get_Pk(self, params, z, D):
                 lin = self.linear_pmm.get_Pk(params, z, D)
-                bst = self.boost.get_Pk(params, z)
+                bst = self.boost.get_Pk(params, z, D)
                 return lin * bst
 
             self._jit_get_Pk = _jit_get_Pk
@@ -155,6 +161,8 @@ class PkEmulator:
 
 def _load_function(filepath: str, func_name: str) -> Callable:
     """Helper to load a function from a python file."""
+    if not os.path.exists(filepath):
+        raise FileNotFoundError(f"Python file not found: {filepath}")
     spec = importlib.util.spec_from_file_location("module.name", filepath)
     module = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(module)
@@ -208,15 +216,43 @@ def load_emulator(
             postprocessing=postprocessing,
         )
     elif structure == NonLinearBoostPkEmulator:
+        preprocessing = _load_function(
+            os.path.join(path, kwargs.get("preprocessing_file", "preprocessing.py")),
+            "preprocessing",
+        )
         return NonLinearBoostPkEmulator(
             trained_emulator=trained_emu,
             k_grid=k_grid,
             in_minmax=in_minmax,
             out_minmax=out_minmax,
+            preprocessing=preprocessing,
             postprocessing=postprocessing,
         )
     else:
         raise ValueError(f"Unknown structure: {structure}")
+
+
+def load_pk_emulator(
+    path: str,
+    pmm_folder: str = "Pk_lin_mm",
+    pcb_folder: str = "Pk_lin_cb",
+    boost_folder: str = "Boost",
+    **kwargs,
+) -> PkEmulator:
+    """
+    Load the complete PkEmulator suite from a directory containing component subfolders.
+    """
+    pmm = load_emulator(
+        os.path.join(path, pmm_folder), structure=LinearPkEmulator, **kwargs
+    )
+    pcb = load_emulator(
+        os.path.join(path, pcb_folder), structure=LinearPkEmulator, **kwargs
+    )
+    boost = load_emulator(
+        os.path.join(path, boost_folder), structure=NonLinearBoostPkEmulator, **kwargs
+    )
+
+    return PkEmulator(linear_pmm=pmm, linear_pkcb=pcb, boost=boost)
 
 
 def load_emulator_from_artifact(

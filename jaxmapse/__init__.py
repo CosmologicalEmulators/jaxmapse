@@ -19,9 +19,15 @@ from .jaxmapse import (
     PkEmulator,
     load_emulator,
     load_emulator_from_artifact,
+    load_pk_emulator,
 )
 
+from .primordial import primordial_Pk
+
 __version__ = "0.1.0"
+
+# Constants matching Mapse.jl
+c_0 = 2.99792458e5  # Speed of light in km/s
 
 __all__ = [
     "LinearPkEmulator",
@@ -29,6 +35,9 @@ __all__ = [
     "PkEmulator",
     "load_emulator",
     "load_emulator_from_artifact",
+    "load_pk_emulator",
+    "primordial_Pk",
+    "c_0",
     "w0waCDMCosmology",
     "a_z",
     "E_a",

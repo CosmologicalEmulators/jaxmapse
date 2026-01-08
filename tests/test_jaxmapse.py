@@ -70,7 +70,10 @@ def mock_boost_emu():
     in_minmax = jnp.tile(jnp.array([0.0, 1.0]), (n_in, 1))
     out_minmax = jnp.tile(jnp.array([0.0, 1.0]), (n_out, 1))
 
-    def postprocessing(p, out, emu):
+    def preprocessing(x):
+        return x
+
+    def postprocessing(p, out, D, emu):
         return out
 
     return NonLinearBoostPkEmulator(
@@ -78,6 +81,7 @@ def mock_boost_emu():
         k_grid=k_grid,
         in_minmax=in_minmax,
         out_minmax=out_minmax,
+        preprocessing=preprocessing,
         postprocessing=postprocessing,
     )
 
