@@ -105,12 +105,14 @@ def test_linear_pk_shapes(mock_linear_emu):
 def test_boost_pk_shapes(mock_boost_emu):
     params = jnp.array([0.1, 0.2, 0.3, 0.4, 0.5])
     z_scalar = 1.0
+    D_scalar = 1.0
 
-    pk = mock_boost_emu.get_Pk(params, z_scalar)
+    pk = mock_boost_emu.get_Pk(params, z_scalar, D_scalar)
     assert pk.shape == (40,)
 
     z_vec = jnp.array([0.0, 1.0, 2.0])
-    pk_vec = mock_boost_emu.get_Pk(params, z_vec)
+    D_vec = jnp.array([1.0, 0.8, 0.6])
+    pk_vec = mock_boost_emu.get_Pk(params, z_vec, D_vec)
     assert pk_vec.shape == (3, 40)
 
 
@@ -125,7 +127,7 @@ def test_pk_emulator_composite(mock_linear_emu, mock_boost_emu):
 
     pk_total = full_emu.get_Pk(params, z, D)
     pk_lin = full_emu.get_linear_pmm(params, z, D)
-    pk_boost = mock_boost_emu.get_Pk(params, z)
+    pk_boost = mock_boost_emu.get_Pk(params, z, D)
 
     assert pk_total.shape == (40,)
     assert jnp.allclose(pk_total, pk_lin * pk_boost)

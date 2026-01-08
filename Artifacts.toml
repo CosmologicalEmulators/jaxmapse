@@ -1,0 +1,7 @@
+[trained_mapse_class_hmcode_mnuw0waOkcdm]
+git-tree-sha1 = "0d1a92a2eb73e6cee4ba3b9af26ce9d2c6f6cb2a"
+lazy = true
+
+[[trained_mapse_class_hmcode_mnuw0waOkcdm.download]]
+url = "https://zenodo.org/records/18186560/files/trained_mapse_class_hmcode_mnuw0waOkcdm.tar.xz?download=1"
+sha256 = "564cef8b8e3cf3fffd545db5e26596ce4595358bc8583d51018c9c10f7e9f85e"

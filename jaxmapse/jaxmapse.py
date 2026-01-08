@@ -97,10 +97,10 @@ class NonLinearBoostPkEmulator:
         output = inv_maximin(norm_output, self.out_minmax)
         return self.postprocessing(input_params, output, D, self)
 
-    def get_Pk(self, input_params: Array, z: Union[float, Array], D: Union[float, Array] = None) -> Array:
+    def get_Pk(self, input_params: Array, z: Union[float, Array], D: Union[float, Array]) -> Array:
         """Compute boost factor. Handles scalar or vector z via automatic vmap."""
         if D is None:
-            D = jnp.ones_like(z) if jnp.ndim(z) > 0 else 1.0
+            raise ValueError("Growth factor D must be provided to get_Pk.")
 
         if not hasattr(self, "_jit_get_Pk"):
 
@@ -271,7 +271,7 @@ def load_emulator_from_artifact(
     from fetch_artifacts import artifact
 
     if artifacts_toml is None:
-        artifacts_toml = Path(__file__).parent / "Artifacts.toml"
+        artifacts_toml = Path(__file__).parent.parent / "Artifacts.toml"
 
     emulator_path = artifact(artifact_name, toml_path=str(artifacts_toml))
     emulator_path = Path(emulator_path)
@@ -283,3 +283,35 @@ def load_emulator_from_artifact(
                 emulator_path = subdirs[0]
 
     return load_emulator(str(emulator_path), structure=structure, **kwargs)
+
+
+def load_pk_emulator_from_artifact(
+    artifact_name: str,
+    artifacts_toml: Optional[str] = None,
+    **kwargs,
+) -> PkEmulator:
+    """
+    Load a complete PkEmulator suite from an artifact.
+    """
+    from pathlib import Path
+    from fetch_artifacts import artifact
+
+    if artifacts_toml is None:
+        artifacts_toml = Path(__file__).parent.parent / "Artifacts.toml"
+
+    emulator_path = artifact(artifact_name, toml_path=str(artifacts_toml))
+    emulator_path = Path(emulator_path)
+
+    # Handle case where tarball contains a single top-level directory
+    if emulator_path.is_dir():
+        # Check if expected subfolders exist directly
+        has_subfolders = (emulator_path / "Pk_lin_mm").exists() or \
+                         (emulator_path / "Boost").exists()
+        
+        if not has_subfolders:
+            # Check if there is a single subdirectory containing them
+            subdirs = [d for d in emulator_path.iterdir() if d.is_dir()]
+            if len(subdirs) == 1:
+                emulator_path = subdirs[0]
+
+    return load_pk_emulator(str(emulator_path), **kwargs)
