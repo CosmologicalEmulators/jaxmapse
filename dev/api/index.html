@@ -543,6 +543,17 @@
   
 </li>
         
+          <li class="md-nav__item">
+  <a href="#jaxmapse.jaxmapse.load_pk_emulator" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        load_pk_emulator
+      
+    </span>
+  </a>
+  
+</li>
+        
       </ul>
     </nav>
   
@@ -722,6 +733,17 @@
   
 </li>
         
+          <li class="md-nav__item">
+  <a href="#jaxmapse.jaxmapse.load_pk_emulator" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        load_pk_emulator
+      
+    </span>
+  </a>
+  
+</li>
+        
       </ul>
     </nav>
   
@@ -887,7 +909,7 @@
 
 
 <h4 id="jaxmapse.jaxmapse.NonLinearBoostPkEmulator.get_Pk" class="doc doc-heading">
-            <code class="highlight language-python"><span class="n">get_Pk</span><span class="p">(</span><span class="n">input_params</span><span class="p">,</span> <span class="n">z</span><span class="p">)</span></code>
+            <code class="highlight language-python"><span class="n">get_Pk</span><span class="p">(</span><span class="n">input_params</span><span class="p">,</span> <span class="n">z</span><span class="p">,</span> <span class="n">D</span><span class="o">=</span><span class="kc">None</span><span class="p">)</span></code>
 
 </h4>
 
@@ -1040,6 +1062,24 @@
     <div class="doc doc-contents ">
 
         <p>Load a trained emulator from an artifact defined in Artifacts.toml.</p>
+
+
+    </div>
+
+</div>
+
+<div class="doc doc-object doc-function">
+
+
+<h3 id="jaxmapse.jaxmapse.load_pk_emulator" class="doc doc-heading">
+            <code class="highlight language-python"><span class="n">load_pk_emulator</span><span class="p">(</span><span class="n">path</span><span class="p">,</span> <span class="n">pmm_folder</span><span class="o">=</span><span class="s1">&#39;Pk_lin_mm&#39;</span><span class="p">,</span> <span class="n">pcb_folder</span><span class="o">=</span><span class="s1">&#39;Pk_lin_cb&#39;</span><span class="p">,</span> <span class="n">boost_folder</span><span class="o">=</span><span class="s1">&#39;Boost&#39;</span><span class="p">,</span> <span class="o">**</span><span class="n">kwargs</span><span class="p">)</span></code>
+
+</h3>
+
+
+    <div class="doc doc-contents ">
+
+        <p>Load the complete PkEmulator suite from a directory containing component subfolders.</p>
 
 
     </div>
