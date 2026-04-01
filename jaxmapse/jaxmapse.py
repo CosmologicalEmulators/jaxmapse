@@ -28,6 +28,8 @@ class LinearPkEmulator:
         out_minmax: Array,
         preprocessing: Callable,
         postprocessing: Callable,
+        pca_mean: Optional[Array] = None,
+        pca_basis: Optional[Array] = None,
     ):
         self.trained_emulator = trained_emulator
         self.k_grid = jnp.asarray(k_grid)
@@ -35,6 +37,13 @@ class LinearPkEmulator:
         self.out_minmax = jnp.asarray(out_minmax)
         self.preprocessing = preprocessing
         self.postprocessing = postprocessing
+        self.pca_mean = jnp.asarray(pca_mean) if pca_mean is not None else None
+        self.pca_basis = jnp.asarray(pca_basis) if pca_basis is not None else None
+
+    def _reconstruct(self, output: Array) -> Array:
+        if self.pca_mean is not None and self.pca_basis is not None:
+            return self.pca_mean + jnp.dot(self.pca_basis, output)
+        return output
 
     def _get_Pk_single(self, input_params: Array, z: float, D: float) -> Array:
         """Core implementation for a single parameter set and single redshift."""
@@ -42,8 +51,9 @@ class LinearPkEmulator:
         nn_input = jnp.insert(preprocessed_input, 0, z)
         norm_input = maximin(nn_input, self.in_minmax)
         norm_output = self.trained_emulator.run_emulator(norm_input)
-        output = inv_maximin(norm_output, self.out_minmax)
-        return self.postprocessing(input_params, output, D, self)
+        denorm_output = inv_maximin(norm_output, self.out_minmax)
+        reconstructed_output = self._reconstruct(denorm_output)
+        return self.postprocessing(input_params, reconstructed_output, D, self)
 
     def get_Pk(
         self, input_params: Array, z: Union[float, Array], D: Union[float, Array]
@@ -80,6 +90,8 @@ class NonLinearBoostPkEmulator:
         out_minmax: Array,
         preprocessing: Callable,
         postprocessing: Callable,
+        pca_mean: Optional[Array] = None,
+        pca_basis: Optional[Array] = None,
     ):
         self.trained_emulator = trained_emulator
         self.k_grid = jnp.asarray(k_grid)
@@ -87,6 +99,13 @@ class NonLinearBoostPkEmulator:
         self.out_minmax = jnp.asarray(out_minmax)
         self.preprocessing = preprocessing
         self.postprocessing = postprocessing
+        self.pca_mean = jnp.asarray(pca_mean) if pca_mean is not None else None
+        self.pca_basis = jnp.asarray(pca_basis) if pca_basis is not None else None
+
+    def _reconstruct(self, output: Array) -> Array:
+        if self.pca_mean is not None and self.pca_basis is not None:
+            return self.pca_mean + jnp.dot(self.pca_basis, output)
+        return output
 
     def _get_Pk_single(self, input_params: Array, z: float, D: float) -> Array:
         """Core implementation for a single parameter set and single redshift."""
@@ -94,8 +113,9 @@ class NonLinearBoostPkEmulator:
         nn_input = jnp.insert(preprocessed_input, 0, z)
         norm_input = maximin(nn_input, self.in_minmax)
         norm_output = self.trained_emulator.run_emulator(norm_input)
-        output = inv_maximin(norm_output, self.out_minmax)
-        return self.postprocessing(input_params, output, D, self)
+        denorm_output = inv_maximin(norm_output, self.out_minmax)
+        reconstructed_output = self._reconstruct(denorm_output)
+        return self.postprocessing(input_params, reconstructed_output, D, self)
 
     def get_Pk(self, input_params: Array, z: Union[float, Array], D: Union[float, Array]) -> Array:
         """Compute boost factor. Handles scalar or vector z via automatic vmap."""
@@ -195,6 +215,11 @@ def load_emulator(
         os.path.join(path, kwargs.get("outminmax_file", "outminmax.npy"))
     )
 
+    pca_mean_path = os.path.join(path, kwargs.get("pca_mean_file", "pca_mean.npy"))
+    pca_basis_path = os.path.join(path, kwargs.get("pca_basis_file", "pca_basis.npy"))
+    pca_mean = jnp.load(pca_mean_path) if os.path.exists(pca_mean_path) else None
+    pca_basis = jnp.load(pca_basis_path) if os.path.exists(pca_basis_path) else None
+
     trained_emu = init_emulator(nn_dict, weights)
 
     postprocessing = _load_function(
@@ -202,34 +227,21 @@ def load_emulator(
         "postprocessing",
     )
 
-    if structure == LinearPkEmulator:
-        preprocessing = _load_function(
-            os.path.join(path, kwargs.get("preprocessing_file", "preprocessing.py")),
-            "preprocessing",
-        )
-        return LinearPkEmulator(
-            trained_emulator=trained_emu,
-            k_grid=k_grid,
-            in_minmax=in_minmax,
-            out_minmax=out_minmax,
-            preprocessing=preprocessing,
-            postprocessing=postprocessing,
-        )
-    elif structure == NonLinearBoostPkEmulator:
-        preprocessing = _load_function(
-            os.path.join(path, kwargs.get("preprocessing_file", "preprocessing.py")),
-            "preprocessing",
-        )
-        return NonLinearBoostPkEmulator(
-            trained_emulator=trained_emu,
-            k_grid=k_grid,
-            in_minmax=in_minmax,
-            out_minmax=out_minmax,
-            preprocessing=preprocessing,
-            postprocessing=postprocessing,
-        )
-    else:
-        raise ValueError(f"Unknown structure: {structure}")
+    preprocessing = _load_function(
+        os.path.join(path, kwargs.get("preprocessing_file", "preprocessing.py")),
+        "preprocessing",
+    )
+
+    return structure(
+        trained_emulator=trained_emu,
+        k_grid=k_grid,
+        in_minmax=in_minmax,
+        out_minmax=out_minmax,
+        preprocessing=preprocessing,
+        postprocessing=postprocessing,
+        pca_mean=pca_mean,
+        pca_basis=pca_basis,
+    )
 
 
 def load_pk_emulator(
@@ -315,3 +327,24 @@ def load_pk_emulator_from_artifact(
                 emulator_path = subdirs[0]
 
     return load_pk_emulator(str(emulator_path), **kwargs)
+
+
+def compute_pca(data: Array, n_components: int):
+    """
+    Computes PCA on the training targets.
+    Returns: mean vector, basis matrix, and PCA coefficients.
+    """
+    mu = jnp.mean(data, axis=1, keepdims=True)
+    centered_data = data - mu
+    u, s, vh = jnp.linalg.svd(centered_data, full_matrices=False)
+    basis = u[:, :n_components]
+    coefficients = jnp.dot(basis.T, centered_data)
+    return jnp.squeeze(mu), basis, coefficients
+
+
+def save_pca_metadata(path: str, mu: Array, basis: Array):
+    """
+    Saves PCA metadata needed for reconstruction.
+    """
+    jnp.save(os.path.join(path, "pca_mean.npy"), mu)
+    jnp.save(os.path.join(path, "pca_basis.npy"), basis)
