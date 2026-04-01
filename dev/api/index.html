@@ -23,7 +23,7 @@
       
       
       <link rel="icon" href="../assets/images/favicon.png">
-      <meta name="generator" content="mkdocs-1.6.1, mkdocs-material-9.7.1">
+      <meta name="generator" content="mkdocs-1.6.1, mkdocs-material-9.7.6">
     
     
       
@@ -522,6 +522,17 @@
 </li>
         
           <li class="md-nav__item">
+  <a href="#jaxmapse.jaxmapse.compute_pca" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        compute_pca
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
   <a href="#jaxmapse.jaxmapse.load_emulator" class="md-nav__link">
     <span class="md-ellipsis">
       
@@ -559,6 +570,17 @@
     <span class="md-ellipsis">
       
         load_pk_emulator_from_artifact
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#jaxmapse.jaxmapse.save_pca_metadata" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        save_pca_metadata
       
     </span>
   </a>
@@ -723,6 +745,17 @@
 </li>
         
           <li class="md-nav__item">
+  <a href="#jaxmapse.jaxmapse.compute_pca" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        compute_pca
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
   <a href="#jaxmapse.jaxmapse.load_emulator" class="md-nav__link">
     <span class="md-ellipsis">
       
@@ -760,6 +793,17 @@
     <span class="md-ellipsis">
       
         load_pk_emulator_from_artifact
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#jaxmapse.jaxmapse.save_pca_metadata" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        save_pca_metadata
       
     </span>
   </a>
@@ -1057,6 +1101,25 @@
 <div class="doc doc-object doc-function">
 
 
+<h3 id="jaxmapse.jaxmapse.compute_pca" class="doc doc-heading">
+            <code class="highlight language-python"><span class="n">compute_pca</span><span class="p">(</span><span class="n">data</span><span class="p">,</span> <span class="n">n_components</span><span class="p">)</span></code>
+
+</h3>
+
+
+    <div class="doc doc-contents ">
+
+        <p>Computes PCA on the training targets.
+Returns: mean vector, basis matrix, and PCA coefficients.</p>
+
+
+    </div>
+
+</div>
+
+<div class="doc doc-object doc-function">
+
+
 <h3 id="jaxmapse.jaxmapse.load_emulator" class="doc doc-heading">
             <code class="highlight language-python"><span class="n">load_emulator</span><span class="p">(</span><span class="n">path</span><span class="p">,</span> <span class="n">structure</span><span class="o">=</span><span class="n">LinearPkEmulator</span><span class="p">,</span> <span class="o">**</span><span class="n">kwargs</span><span class="p">)</span></code>
 
@@ -1120,6 +1183,24 @@
     <div class="doc doc-contents ">
 
         <p>Load a complete PkEmulator suite from an artifact.</p>
+
+
+    </div>
+
+</div>
+
+<div class="doc doc-object doc-function">
+
+
+<h3 id="jaxmapse.jaxmapse.save_pca_metadata" class="doc doc-heading">
+            <code class="highlight language-python"><span class="n">save_pca_metadata</span><span class="p">(</span><span class="n">path</span><span class="p">,</span> <span class="n">mu</span><span class="p">,</span> <span class="n">basis</span><span class="p">)</span></code>
+
+</h3>
+
+
+    <div class="doc doc-contents ">
+
+        <p>Saves PCA metadata needed for reconstruction.</p>
 
 
     </div>
