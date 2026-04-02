@@ -42,7 +42,9 @@ class LinearPkEmulator:
 
     def _reconstruct(self, output: Array) -> Array:
         if self.pca_mean is not None and self.pca_basis is not None:
+            # jax.debug.print("DEBUG: Reconstruction. basis shape: {b}, output shape: {o}, mean shape: {m}", b=self.pca_basis.shape, o=output.shape, m=self.pca_mean.shape)
             return self.pca_mean + jnp.dot(self.pca_basis, output)
+        # jax.debug.print("DEBUG: No PCA. returning output with shape {o}", o=output.shape)
         return output
 
     def _get_Pk_single(self, input_params: Array, z: float, D: float) -> Array:
@@ -53,6 +55,7 @@ class LinearPkEmulator:
         norm_output = self.trained_emulator.run_emulator(norm_input)
         denorm_output = inv_maximin(norm_output, self.out_minmax)
         reconstructed_output = self._reconstruct(denorm_output)
+        # jax.debug.print("DEBUG: Calling postprocessing. input_params shape: {ip}, reconstructed_output shape: {ro}", ip=input_params.shape, ro=reconstructed_output.shape)
         return self.postprocessing(input_params, reconstructed_output, D, self)
 
     def get_Pk(
@@ -104,7 +107,9 @@ class NonLinearBoostPkEmulator:
 
     def _reconstruct(self, output: Array) -> Array:
         if self.pca_mean is not None and self.pca_basis is not None:
+            # jax.debug.print("DEBUG: Reconstruction. basis shape: {b}, output shape: {o}, mean shape: {m}", b=self.pca_basis.shape, o=output.shape, m=self.pca_mean.shape)
             return self.pca_mean + jnp.dot(self.pca_basis, output)
+        # jax.debug.print("DEBUG: No PCA. returning output with shape {o}", o=output.shape)
         return output
 
     def _get_Pk_single(self, input_params: Array, z: float, D: float) -> Array:
@@ -115,6 +120,7 @@ class NonLinearBoostPkEmulator:
         norm_output = self.trained_emulator.run_emulator(norm_input)
         denorm_output = inv_maximin(norm_output, self.out_minmax)
         reconstructed_output = self._reconstruct(denorm_output)
+        # jax.debug.print("DEBUG: Calling postprocessing. input_params shape: {ip}, reconstructed_output shape: {ro}", ip=input_params.shape, ro=reconstructed_output.shape)
         return self.postprocessing(input_params, reconstructed_output, D, self)
 
     def get_Pk(self, input_params: Array, z: Union[float, Array], D: Union[float, Array]) -> Array:
@@ -216,7 +222,7 @@ def load_emulator(
     )
 
     pca_mean_path = os.path.join(path, kwargs.get("pca_mean_file", "pca_mean.npy"))
-    pca_basis_path = os.path.join(path, kwargs.get("pca_basis_file", "pca_basis.npy"))
+    pca_basis_path = os.path.join(path, kwargs.get("pca_basis_file", "pca_projection.npy"))
     pca_mean = jnp.load(pca_mean_path) if os.path.exists(pca_mean_path) else None
     pca_basis = jnp.load(pca_basis_path) if os.path.exists(pca_basis_path) else None
 
