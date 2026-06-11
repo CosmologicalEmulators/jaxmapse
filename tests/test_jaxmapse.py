@@ -2,9 +2,16 @@ import flax.linen as nn
 import jax
 import jax.numpy as jnp
 import pytest
+import tomllib
+from pathlib import Path
 from jaxace import FlaxEmulator
 
-from jaxmapse import LinearPkEmulator, NonLinearBoostPkEmulator, PkEmulator
+from jaxmapse import (
+    DEFAULT_EMULATOR_ARTIFACT,
+    LinearPkEmulator,
+    NonLinearBoostPkEmulator,
+    PkEmulator,
+)
 
 # Configuration
 jax.config.update("jax_enable_x64", True)
@@ -160,3 +167,35 @@ def test_vmap_consistency(mock_linear_emu):
 
     assert jnp.allclose(pk_batch[0], pk_single_1)
     assert jnp.allclose(pk_batch[1], pk_single_2)
+
+
+def test_pca_output_reconstruction(mock_linear_emu):
+    mock_linear_emu.pca_mean = jnp.array([10.0, 20.0, 30.0])
+    mock_linear_emu.pca_projection = jnp.array(
+        [
+            [1.0, 0.0],
+            [0.0, 1.0],
+            [1.0, 1.0],
+        ]
+    )
+
+    decoded = mock_linear_emu._decode_output(jnp.array([2.0, 3.0]))
+
+    assert jnp.allclose(decoded, jnp.array([12.0, 23.0, 35.0]))
+
+
+def test_default_artifact_metadata():
+    artifacts_toml = Path(__file__).resolve().parents[1] / "Artifacts.toml"
+    data = tomllib.loads(artifacts_toml.read_text())
+
+    assert DEFAULT_EMULATOR_ARTIFACT == "mnuw0wacdm_class"
+    artifact = data[DEFAULT_EMULATOR_ARTIFACT]
+
+    assert artifact["git-tree-sha1"] == "c1a93f08faafd81f6c62ac3ee97bb9fe37f8cf2e"
+    assert artifact["download"][0]["url"] == (
+        "https://zenodo.org/records/20646263/files/"
+        "trained_mapse_mnuw0wacdm_sym_ratio_pca_1em6_250000.tar.xz?download=1"
+    )
+    assert artifact["download"][0]["sha256"] == (
+        "1624999b2ae943a8820927cac1eafede033f6b77b3c166ce88a6cf109361c594"
+    )

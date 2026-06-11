@@ -14,6 +14,7 @@ from jaxace.background import (
 )
 
 from .jaxmapse import (
+    DEFAULT_EMULATOR_ARTIFACT,
     LinearPkEmulator,
     NonLinearBoostPkEmulator,
     PkEmulator,
@@ -31,6 +32,7 @@ __version__ = "0.1.0"
 c_0 = 2.99792458e5  # Speed of light in km/s
 
 __all__ = [
+    "DEFAULT_EMULATOR_ARTIFACT",
     "LinearPkEmulator",
     "NonLinearBoostPkEmulator",
     "PkEmulator",
