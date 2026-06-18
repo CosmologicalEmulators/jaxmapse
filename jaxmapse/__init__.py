@@ -1,3 +1,9 @@
+import os
+import warnings
+from pathlib import Path
+from typing import Dict, Optional
+
+from fetch_artifacts import load_artifacts
 from jaxace.background import (
     D_f_z,
     D_z,
@@ -13,6 +19,14 @@ from jaxace.background import (
     w0waCDMCosmology,
 )
 
+from .halofit import (
+    HalofitCosmology,
+    halofit_background,
+    halofit_cosmology,
+    halofit_Pmm,
+    halofit_pmm,
+    halofit_pmm_from_params,
+)
 from .jaxmapse import (
     DEFAULT_EMULATOR_ARTIFACT,
     LinearPkEmulator,
@@ -23,16 +37,6 @@ from .jaxmapse import (
     load_pk_emulator,
     load_pk_emulator_from_artifact,
 )
-
-from .halofit import (
-    HalofitCosmology,
-    halofit_Pmm,
-    halofit_background,
-    halofit_cosmology,
-    halofit_pmm,
-    halofit_pmm_from_params,
-)
-
 from .primordial import primordial_Pk
 
 __version__ = "0.1.0"
@@ -73,12 +77,6 @@ __all__ = [
 ]
 
 # Artifact management and auto-loading
-import os
-import warnings
-from pathlib import Path
-from typing import Dict, Optional
-from fetch_artifacts import load_artifacts
-
 # Initialize the trained_emulators dictionary
 # Format: { "emulator_name": PkEmulator_instance }
 trained_emulators: Dict[str, Optional[PkEmulator]] = {}
@@ -89,6 +87,7 @@ _ARTIFACTS_TOML = Path(__file__).parent.parent / "Artifacts.toml"
 # Global artifact manager
 _artifact_manager = None
 
+
 def _get_artifact_manager():
     """Get or create the artifact manager singleton."""
     global _artifact_manager
@@ -98,6 +97,7 @@ def _get_artifact_manager():
         else:
             warnings.warn(f"Artifacts.toml not found at {_ARTIFACTS_TOML}")
     return _artifact_manager
+
 
 # Load emulators on import (unless disabled)
 if not os.environ.get("JAXMAPSE_NO_AUTO_DOWNLOAD"):

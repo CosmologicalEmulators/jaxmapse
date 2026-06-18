@@ -1,9 +1,10 @@
+import tomllib
+from pathlib import Path
+
 import flax.linen as nn
 import jax
 import jax.numpy as jnp
 import pytest
-import tomllib
-from pathlib import Path
 from jaxace import FlaxEmulator
 
 from jaxmapse import (

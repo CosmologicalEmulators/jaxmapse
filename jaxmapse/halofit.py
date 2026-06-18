@@ -12,7 +12,6 @@ import jax.numpy as jnp
 from jaxace import background as _background
 from jaxtyping import Array
 
-
 _HALOFIT_OMEGA_GAMMA_H2 = 2.469e-5
 _HALOFIT_MNU_TO_OMEGA_NU_H2 = 93.14
 _HALOFIT_CLASS_N_UR = 2.033

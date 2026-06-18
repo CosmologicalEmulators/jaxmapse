@@ -390,6 +390,7 @@ def load_pk_emulator_from_artifact(
     Load a complete PkEmulator suite from an artifact.
     """
     from pathlib import Path
+
     from fetch_artifacts import artifact
 
     if artifacts_toml is None:
