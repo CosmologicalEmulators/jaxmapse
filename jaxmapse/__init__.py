@@ -24,6 +24,15 @@ from .jaxmapse import (
     load_pk_emulator_from_artifact,
 )
 
+from .halofit import (
+    HalofitCosmology,
+    halofit_Pmm,
+    halofit_background,
+    halofit_cosmology,
+    halofit_pmm,
+    halofit_pmm_from_params,
+)
+
 from .primordial import primordial_Pk
 
 __version__ = "0.1.0"
@@ -36,10 +45,16 @@ __all__ = [
     "LinearPkEmulator",
     "NonLinearBoostPkEmulator",
     "PkEmulator",
+    "HalofitCosmology",
     "load_emulator",
     "load_emulator_from_artifact",
     "load_pk_emulator",
     "load_pk_emulator_from_artifact",
+    "halofit_background",
+    "halofit_cosmology",
+    "halofit_pmm",
+    "halofit_Pmm",
+    "halofit_pmm_from_params",
     "primordial_Pk",
     "c_0",
     "w0waCDMCosmology",

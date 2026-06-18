@@ -125,7 +125,9 @@ class NonLinearBoostPkEmulator:
         output = self._decode_output(output)
         return self.postprocessing(input_params, output, D, self)
 
-    def get_Pk(self, input_params: Array, z: Union[float, Array], D: Union[float, Array]) -> Array:
+    def get_Pk(
+        self, input_params: Array, z: Union[float, Array], D: Union[float, Array]
+    ) -> Array:
         """Compute boost factor. Handles scalar or vector z via automatic vmap."""
         if D is None:
             raise ValueError("Growth factor D must be provided to get_Pk.")
@@ -188,6 +190,69 @@ class PkEmulator:
         """Returns linear c+b power spectrum."""
         return self.linear_pkcb.get_Pk(input_params, z, D)
 
+    def get_halofit_pmm(
+        self,
+        input_params: Array,
+        z: Union[float, Array],
+        D: Optional[Union[float, Array]] = None,
+        omega_m_z: Optional[Union[float, Array]] = None,
+        omega_v_z: Optional[Union[float, Array]] = None,
+    ) -> tuple[Array, Array]:
+        """Return ``(k, Pmm_nl)`` from linear Pmm plus JAX-native Halofit.
+
+        This is the low-effort nonlinear matter-power API. For the default
+        path, users only pass MAPSE parameters and redshift(s):
+
+        ``k, pk_nl = emu.get_halofit_pmm(params, z)``
+
+        ``params`` must follow the MAPSE ``mnuw0wacdm`` order
+        ``[ln10As, ns, H0, omega_b, omega_c, Mnu, w0, wa]``. Vector-redshift
+        outputs follow the jaxmapse convention ``(len(z), len(k))``.
+
+        Advanced callers may pass ``D`` and/or explicit ``omega_m_z`` and
+        ``omega_v_z`` arrays to compare against an external background model.
+        """
+        from jaxace.background import w0waCDMCosmology
+
+        from .halofit import halofit_background, halofit_cosmology, halofit_pmm
+
+        params = jnp.asarray(input_params)
+        z_arr = jnp.asarray(z)
+
+        if D is None:
+            h = jnp.where(params[2] > 10.0, params[2] / 100.0, params[2])
+            growth_cosmology = w0waCDMCosmology(
+                ln10As=params[0],
+                ns=params[1],
+                h=h,
+                omega_b=params[3],
+                omega_c=params[4],
+                m_nu=params[5],
+                w0=params[6],
+                wa=params[7],
+            )
+            D = growth_cosmology.D_z(z_arr)
+
+        pk_lin_mm = self.get_linear_pmm(params, z_arr, D)
+        halofit_cpar = halofit_cosmology(params)
+
+        if (omega_m_z is None) != (omega_v_z is None):
+            raise ValueError("omega_m_z and omega_v_z must be provided together.")
+        if omega_m_z is None:
+            omega_m_z, omega_v_z = halofit_background(halofit_cpar, z_arr)
+
+        pk_nl = halofit_pmm(
+            halofit_cpar,
+            z_arr,
+            self.linear_pmm.k_grid,
+            pk_lin_mm,
+            omega_m_z,
+            omega_v_z,
+        )
+        return self.linear_pmm.k_grid, pk_nl
+
+    get_halofit_Pmm = get_halofit_pmm
+
 
 def _load_function(filepath: str, func_name: str) -> Callable:
     """Helper to load a function from a python file."""
@@ -231,7 +296,9 @@ def load_emulator(
     )
     pca_projection_file = os.path.join(path, pca_projection_name)
     has_pca = os.path.exists(pca_mean_file) or os.path.exists(pca_projection_file)
-    if has_pca and not (os.path.exists(pca_mean_file) and os.path.exists(pca_projection_file)):
+    if has_pca and not (
+        os.path.exists(pca_mean_file) and os.path.exists(pca_projection_file)
+    ):
         raise FileNotFoundError(
             "PCA emulator output requires both pca_mean.npy and pca_projection.npy"
         )
@@ -334,9 +401,10 @@ def load_pk_emulator_from_artifact(
     # Handle case where tarball contains a single top-level directory
     if emulator_path.is_dir():
         # Check if expected subfolders exist directly
-        has_subfolders = (emulator_path / "Pk_lin_mm").exists() or \
-                         (emulator_path / "Boost").exists()
-        
+        has_subfolders = (emulator_path / "Pk_lin_mm").exists() or (
+            emulator_path / "Boost"
+        ).exists()
+
         if not has_subfolders:
             # Check if there is a single subdirectory containing them
             subdirs = [d for d in emulator_path.iterdir() if d.is_dir()]
