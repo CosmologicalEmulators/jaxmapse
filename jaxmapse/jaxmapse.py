@@ -2,6 +2,7 @@ import importlib.util
 import json
 import os
 from functools import partial
+from pathlib import Path
 from typing import Callable, Optional, Type, Union
 
 import jax
@@ -15,6 +16,27 @@ from jaxtyping import Array
 jax.config.update("jax_enable_x64", True)
 
 DEFAULT_EMULATOR_ARTIFACT = "mnuw0wacdm_class"
+
+
+def default_artifacts_toml() -> Path:
+    """Return the packaged artifact registry path."""
+    try:
+        from importlib.resources import files
+
+        return Path(str(files("jaxmapse") / "Artifacts.toml"))
+    except Exception:
+        return Path(__file__).parent / "Artifacts.toml"
+
+
+def _interp_to_grid(source_k: Array, values: Array, target_k: Array) -> Array:
+    """Interpolate one or more spectra from ``source_k`` onto ``target_k``."""
+    source_k = jnp.asarray(source_k)
+    target_k = jnp.asarray(target_k)
+    values = jnp.asarray(values)
+
+    if values.ndim == 1:
+        return jnp.interp(target_k, source_k, values)
+    return jax.vmap(lambda row: jnp.interp(target_k, source_k, row))(values)
 
 
 class LinearPkEmulator:
@@ -66,6 +88,9 @@ class LinearPkEmulator:
         """
         Compute linear power spectrum. Handles scalar or vector z/D via automatic vmap.
         """
+        if D is None:
+            raise ValueError("Growth factor D must be provided to get_Pk.")
+
         if not hasattr(self, "_jit_get_Pk"):
 
             @partial(jax.jit, static_argnums=(0,))
@@ -157,23 +182,37 @@ class PkEmulator:
         self,
         linear_pmm: LinearPkEmulator,
         linear_pkcb: LinearPkEmulator,
-        boost: NonLinearBoostPkEmulator,
+        boost: Optional[NonLinearBoostPkEmulator],
     ):
         self.linear_pmm = linear_pmm
         self.linear_pkcb = linear_pkcb
         self.boost = boost
+        self.k_grid = linear_pmm.k_grid if boost is None else boost.k_grid
 
     def get_Pk(
         self, input_params: Array, z: Union[float, Array], D: Union[float, Array]
     ) -> Array:
-        """Returns P_mm,lin * Boost."""
+        """Returns nonlinear ``Pmm`` on the top-level output grid.
+
+        The official ``mnuw0wacdm_class`` artifact has different component
+        grids: the linear spectra live on a 300-point grid, while the nonlinear
+        boost lives on a 98-point grid. The top-level nonlinear result is
+        therefore returned on ``self.boost.k_grid`` after interpolating linear
+        ``Pmm`` onto that grid.
+        """
+        if self.boost is None:
+            raise ValueError("Cannot compute get_Pk without a boost emulator.")
+
         if not hasattr(self, "_jit_get_Pk"):
 
             @partial(jax.jit, static_argnums=(0,))
             def _jit_get_Pk(self, params, z, D):
                 lin = self.linear_pmm.get_Pk(params, z, D)
                 bst = self.boost.get_Pk(params, z, D)
-                return lin * bst
+                lin_on_boost_grid = _interp_to_grid(
+                    self.linear_pmm.k_grid, lin, self.boost.k_grid
+                )
+                return lin_on_boost_grid * bst
 
             self._jit_get_Pk = _jit_get_Pk
         return self._jit_get_Pk(self, input_params, z, D)
@@ -217,6 +256,11 @@ class PkEmulator:
         from .halofit import halofit_background, halofit_cosmology, halofit_pmm
 
         params = jnp.asarray(input_params)
+        if params.ndim != 1 or params.shape[0] != 8:
+            raise ValueError(
+                "Halofit helpers expect flat mnuw0wacdm parameters in order "
+                "[ln10As, ns, H0, omega_b, omega_c, Mnu, w0, wa]."
+            )
         z_arr = jnp.asarray(z)
 
         if D is None:
@@ -362,12 +406,10 @@ def load_emulator_from_artifact(
     """
     Load a trained emulator from an artifact defined in Artifacts.toml.
     """
-    from pathlib import Path
-
     from fetch_artifacts import artifact
 
     if artifacts_toml is None:
-        artifacts_toml = Path(__file__).parent.parent / "Artifacts.toml"
+        artifacts_toml = default_artifacts_toml()
 
     emulator_path = artifact(artifact_name, toml_path=str(artifacts_toml))
     emulator_path = Path(emulator_path)
@@ -389,12 +431,10 @@ def load_pk_emulator_from_artifact(
     """
     Load a complete PkEmulator suite from an artifact.
     """
-    from pathlib import Path
-
     from fetch_artifacts import artifact
 
     if artifacts_toml is None:
-        artifacts_toml = Path(__file__).parent.parent / "Artifacts.toml"
+        artifacts_toml = default_artifacts_toml()
 
     emulator_path = artifact(artifact_name, toml_path=str(artifacts_toml))
     emulator_path = Path(emulator_path)

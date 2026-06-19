@@ -4,10 +4,14 @@ JAX-based implementation of the MAtter Power Spectrum Emulator (Mapse), mirrorin
 
 ## Overview
 
-`jaxmapse` provides a high-performance, differentiable emulator for the matter power spectrum. By leveraging JAX, it supports:
-- **Automatic Differentiation**: Compute gradients of the power spectrum with respect to cosmological parameters.
-- **Just-In-Time (JIT) Compilation**: Near-native execution speeds.
-- **Vectorization**: Efficiently process batches of cosmological parameters or redshifts using `vmap`.
+`jaxmapse` provides differentiable matter-power-spectrum emulators with JAX:
+
+- artifact-backed loading of official trained emulators,
+- PCA-compressed linear and nonlinear components,
+- JAX-native Halofit for nonlinear total-matter spectra,
+- automatic differentiation, JIT compilation, and vectorized redshift evaluation.
+
+`jaxmapse` enables 64-bit JAX mode at import time because the cosmology kernels and emulator postprocessing are calibrated for Float64 precision.
 
 ## Installation
 
@@ -15,27 +19,61 @@ JAX-based implementation of the MAtter Power Spectrum Emulator (Mapse), mirrorin
 pip install .
 ```
 
-## Usage
+## Quickstart
+
+The official default artifact is loaded into `jaxmapse.trained_emulators` when the package is imported, unless `JAXMAPSE_NO_AUTO_DOWNLOAD=1` is set.
 
 ```python
 import jax.numpy as jnp
-from jaxmapse import load_emulator, w0waCDMCosmology, D_z
+import jaxmapse
+from jaxmapse import w0waCDMCosmology
 
-# Load the composite emulator
-emu = load_emulator("path/to/model", structure="PkEmulator")
+emu = jaxmapse.trained_emulators[jaxmapse.DEFAULT_EMULATOR_ARTIFACT]
 
-# Define cosmology and compute background
-cosmo_params = jnp.array([0.3, 0.7, 0.05, 0.96, 0.67]) # example input
-cosmo_bg = w0waCDMCosmology(h=0.67, ωb=0.022, ωc=0.12)
-z = 1.0
-D = D_z(z, cosmo_bg)
+# Parameter order for the default mnuw0wacdm artifact:
+# [ln10As, ns, H0, omega_b, omega_c, Mnu, w0, wa]
+params = jnp.array([3.044, 0.9649, 67.36, 0.02237, 0.12, 0.06, -1.0, 0.0])
+z = 0.0
 
-# Get P(k)
-pk = emu.get_Pk(cosmo_params, z, D)
+cosmo = w0waCDMCosmology(
+    ln10As=params[0],
+    ns=params[1],
+    h=params[2] / 100.0,
+    omega_b=params[3],
+    omega_c=params[4],
+    m_nu=params[5],
+    w0=params[6],
+    wa=params[7],
+)
+D = cosmo.D_z(z)
+
+k = emu.k_grid
+pk_nonlinear = emu.get_Pk(params, z, D)
 ```
 
-## Background Cosmology
+For the default artifact the linear components are stored on a 300-point `k` grid and the nonlinear boost is stored on a 98-point `k` grid. The top-level `emu.get_Pk(...)` interpolates the linear `Pmm` prediction onto the boost grid and returns nonlinear `Pmm` on `emu.k_grid == emu.boost.k_grid`.
 
-`jaxmapse` re-exports background cosmology functions from `jaxace` for convenience:
+To compute nonlinear `Pmm` from the linear emulator with JAX-native Halofit:
+
+```python
+k_halofit, pk_halofit = emu.get_halofit_pmm(params, jnp.array([0.0, 0.5, 1.0]))
+```
+
+Vector-redshift outputs use the jaxmapse convention `(len(z), len(k))`.
+
+## Artifact loading
+
+`Artifacts.toml` is packaged inside the `jaxmapse` wheel and discovered through Python package resources. To disable eager artifact loading on import, set:
+
+```bash
+export JAXMAPSE_NO_AUTO_DOWNLOAD=1
+```
+
+This is useful for fast local unit tests or offline imports. Real-artifact tests are marked with the `artifact` pytest marker.
+
+## Background cosmology
+
+`jaxmapse` re-exports background cosmology helpers from `jaxace`, including:
+
 - `w0waCDMCosmology`
 - `D_z`, `f_z`, `E_z`, etc.

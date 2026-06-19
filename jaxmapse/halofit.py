@@ -52,6 +52,13 @@ def halofit_cosmology(
     """
 
     params = jnp.asarray(input_params)
+    if params.ndim != 1 or params.shape[0] != 8:
+        raise ValueError(
+            "halofit_cosmology expects flat mnuw0wacdm parameters in order "
+            "[ln10As, ns, H0, omega_b, omega_c, Mnu, w0, wa]. "
+            "Curved/HMCODE parameter vectors are not accepted by this flat "
+            "Halofit helper."
+        )
     h_raw = params[2]
     h = jnp.where(h_raw > 10.0, h_raw / 100.0, h_raw)
     omega_b = params[3]
@@ -90,7 +97,10 @@ def halofit_background(cosmology: HalofitCosmology, z: Array) -> tuple[Array, Ar
     Returns ``(omega_m_z, omega_v_z)`` for scalar or vector redshift ``z``.
     This helper uses the same jaxace background convention used elsewhere in
     jaxmapse. The matter term includes CDM+baryons plus the jaxace massive
-    neutrino energy-density contribution.
+    neutrino energy-density contribution. This is intentionally not forced to
+    equal the simple non-relativistic density bookkeeping stored in
+    :class:`HalofitCosmology` at exactly ``z=0``; explicit background arrays are
+    the source of truth for the Halofit kernel.
 
     The calculation is intentionally separate from :func:`halofit_pmm`, so
     callers can still inject CLASS/CAMB/emulator background arrays when they
@@ -329,18 +339,43 @@ def halofit_pmm(
         for scalar ``z``.
     """
 
-    z_arr = jnp.atleast_1d(jnp.asarray(z))
+    z_input = jnp.asarray(z)
+    z_arr = jnp.atleast_1d(z_input)
     k_arr = jnp.asarray(k)
     pk_arr = jnp.asarray(pk_lin_mm_z)
-    omega_m_arr = jnp.atleast_1d(jnp.asarray(omega_m_z))
-    omega_v_arr = jnp.atleast_1d(jnp.asarray(omega_v_z))
+    omega_m_input = jnp.asarray(omega_m_z)
+    omega_v_input = jnp.asarray(omega_v_z)
+    omega_m_arr = jnp.atleast_1d(omega_m_input)
+    omega_v_arr = jnp.atleast_1d(omega_v_input)
+
+    if k_arr.ndim != 1:
+        raise ValueError("k must be a one-dimensional grid.")
+    if z_input.ndim > 1:
+        raise ValueError("z must be scalar or one-dimensional.")
+    if omega_m_input.ndim != z_input.ndim or omega_v_input.ndim != z_input.ndim:
+        raise ValueError(
+            "omega_m_z and omega_v_z must have the same scalar/vector shape as z."
+        )
+    if omega_m_arr.shape[0] != z_arr.shape[0] or omega_v_arr.shape[0] != z_arr.shape[0]:
+        raise ValueError("omega_m_z and omega_v_z lengths must match z.")
 
     if pk_arr.ndim == 1:
+        if z_input.ndim != 0:
+            raise ValueError("one-dimensional pk_lin_mm_z is only valid for scalar z.")
+        if pk_arr.shape[0] != k_arr.shape[0]:
+            raise ValueError("pk_lin_mm_z length must match k for scalar z.")
         pk_kz = pk_arr[:, None]
         out_kz = _halofit_pmm_kz(
             cosmology, z_arr, k_arr, pk_kz, omega_m_arr, omega_v_arr
         )
         return out_kz[:, 0]
+
+    if pk_arr.ndim != 2:
+        raise ValueError("pk_lin_mm_z must be one- or two-dimensional.")
+    if z_input.ndim == 0:
+        raise ValueError("two-dimensional pk_lin_mm_z requires vector z.")
+    if pk_arr.shape != (z_arr.shape[0], k_arr.shape[0]):
+        raise ValueError("pk_lin_mm_z must have shape (len(z), len(k)) for vector z.")
 
     pk_kz = jnp.swapaxes(pk_arr, 0, 1)
     out_kz = _halofit_pmm_kz(cosmology, z_arr, k_arr, pk_kz, omega_m_arr, omega_v_arr)

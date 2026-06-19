@@ -1,6 +1,5 @@
 import os
 import warnings
-from pathlib import Path
 from typing import Dict, Optional
 
 from fetch_artifacts import load_artifacts
@@ -32,6 +31,7 @@ from .jaxmapse import (
     LinearPkEmulator,
     NonLinearBoostPkEmulator,
     PkEmulator,
+    default_artifacts_toml,
     load_emulator,
     load_emulator_from_artifact,
     load_pk_emulator,
@@ -49,6 +49,7 @@ __all__ = [
     "LinearPkEmulator",
     "NonLinearBoostPkEmulator",
     "PkEmulator",
+    "default_artifacts_toml",
     "HalofitCosmology",
     "load_emulator",
     "load_emulator_from_artifact",
@@ -81,8 +82,8 @@ __all__ = [
 # Format: { "emulator_name": PkEmulator_instance }
 trained_emulators: Dict[str, Optional[PkEmulator]] = {}
 
-# Path to Artifacts.toml (in package directory)
-_ARTIFACTS_TOML = Path(__file__).parent.parent / "Artifacts.toml"
+# Path to the packaged Artifacts.toml registry.
+_ARTIFACTS_TOML = default_artifacts_toml()
 
 # Global artifact manager
 _artifact_manager = None

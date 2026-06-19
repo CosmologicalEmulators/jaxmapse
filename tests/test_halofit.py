@@ -1,5 +1,6 @@
 import jax
 import jax.numpy as jnp
+import pytest
 
 from jaxmapse import (
     PkEmulator,
@@ -166,3 +167,60 @@ def test_pk_emulator_get_halofit_pmm_low_effort_api_matches_manual_call():
     assert jnp.allclose(k_api, k)
     assert pk_api.shape == (len(z), len(k))
     assert jnp.allclose(pk_api, pk_manual, rtol=1.0e-12, atol=1.0e-12)
+
+
+def test_halofit_pmm_rejects_inconsistent_scalar_vector_shapes():
+    _, cosmology, z, k, pk_lin_zk, omega_m_z, omega_v_z = _synthetic_case(nk=17, nz=3)
+
+    with pytest.raises(
+        ValueError, match="two-dimensional pk_lin_mm_z requires vector z"
+    ):
+        halofit_pmm(cosmology, 0.0, k, pk_lin_zk, omega_m_z[0], omega_v_z[0])
+
+    with pytest.raises(ValueError, match="one-dimensional pk_lin_mm_z is only valid"):
+        halofit_pmm(cosmology, z, k, pk_lin_zk[0], omega_m_z, omega_v_z)
+
+    with pytest.raises(ValueError, match="same scalar/vector shape as z"):
+        halofit_pmm(cosmology, z, k, pk_lin_zk, omega_m_z[0], omega_v_z[0])
+
+
+def test_halofit_cosmology_rejects_non_flat_hmcode_parameter_vectors():
+    params = jnp.array(
+        [3.044, 0.9649, 67.36, 0.02237, 0.12, 0.06, -1.0, 0.0, 0.01, 7.8]
+    )
+
+    with pytest.raises(ValueError, match="Curved/HMCODE parameter vectors"):
+        halofit_cosmology(params)
+
+
+def test_halofit_background_z0_convention_is_documented_close_but_not_identical():
+    params, cosmology, *_ = _synthetic_case(nk=17, nz=3)
+    omega_m0, omega_v0 = halofit_background(cosmology, jnp.array(0.0))
+
+    assert jnp.isfinite(omega_m0)
+    assert jnp.isfinite(omega_v0)
+    assert abs(float(omega_v0 - cosmology.omega_lambda0)) < 1.0e-4
+
+
+def test_halofit_pmm_matches_class_reference_table():
+    import numpy as np
+
+    data = np.loadtxt("tests/data/halofit_class_reference.txt")
+    z_values = np.unique(data[:, 0])
+    k_values = data[data[:, 0] == z_values[0], 1]
+    pk_lin_zk = np.stack([data[data[:, 0] == z, 2] for z in z_values])
+    omega_m_z = np.array([data[data[:, 0] == z, 3][0] for z in z_values])
+    omega_v_z = np.array([data[data[:, 0] == z, 4][0] for z in z_values])
+    pk_nl_ref = np.stack([data[data[:, 0] == z, 5] for z in z_values])
+
+    params = jnp.array([3.044, 0.9649, 67.36, 0.02237, 0.12, 0.06, -1.0, 0.0])
+    pk_nl = halofit_pmm(
+        halofit_cosmology(params),
+        jnp.asarray(z_values),
+        jnp.asarray(k_values),
+        jnp.asarray(pk_lin_zk),
+        jnp.asarray(omega_m_z),
+        jnp.asarray(omega_v_z),
+    )
+
+    assert jnp.allclose(pk_nl, jnp.asarray(pk_nl_ref), rtol=6.0e-3, atol=0.0)

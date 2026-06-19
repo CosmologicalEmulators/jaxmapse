@@ -204,3 +204,47 @@ def test_default_artifact_metadata():
     assert artifact["download"][0]["sha256"] == (
         "1624999b2ae943a8820927cac1eafede033f6b77b3c166ce88a6cf109361c594"
     )
+
+
+class StaticComponent:
+    def __init__(self, k_grid, values):
+        self.k_grid = jnp.asarray(k_grid)
+        self.values = jnp.asarray(values)
+
+    def get_Pk(self, input_params, z, D):
+        z_arr = jnp.asarray(z)
+        if z_arr.ndim == 0:
+            return self.values
+        return jnp.repeat(self.values[None, :], z_arr.shape[0], axis=0)
+
+
+def test_pk_emulator_interpolates_linear_pmm_to_boost_grid():
+    linear_k = jnp.array([0.0, 1.0, 2.0, 3.0])
+    boost_k = jnp.array([0.5, 1.5, 2.5])
+    linear_values = jnp.array([1.0, 3.0, 7.0, 13.0])
+    boost_values = jnp.array([2.0, 4.0, 8.0])
+    emu = PkEmulator(
+        linear_pmm=StaticComponent(linear_k, linear_values),
+        linear_pkcb=StaticComponent(linear_k, linear_values),
+        boost=StaticComponent(boost_k, boost_values),
+    )
+
+    pk = emu.get_Pk(jnp.ones(5), 0.0, 1.0)
+    expected = jnp.interp(boost_k, linear_k, linear_values) * boost_values
+
+    assert pk.shape == boost_k.shape
+    assert jnp.allclose(pk, expected)
+
+    z = jnp.array([0.0, 1.0])
+    pk_z = emu.get_Pk(jnp.ones(5), z, jnp.ones_like(z))
+    assert pk_z.shape == (2, len(boost_k))
+    assert jnp.allclose(pk_z[0], expected)
+
+
+def test_packaged_artifacts_toml_is_discoverable():
+    from importlib.resources import files
+
+    registry = files("jaxmapse") / "Artifacts.toml"
+    data = tomllib.loads(registry.read_text())
+
+    assert DEFAULT_EMULATOR_ARTIFACT in data

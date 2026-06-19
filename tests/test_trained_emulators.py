@@ -1,3 +1,5 @@
+import os
+
 import jax
 import jax.numpy as jnp
 import pytest
@@ -5,11 +7,17 @@ import pytest
 import jaxmapse
 from jaxmapse import w0waCDMCosmology
 
+pytestmark = pytest.mark.artifact
+
 EMULATOR_NAME = "trained_mapse_class_hmcode_mnuw0waOkcdm"
+DEFAULT_PARAMS = jnp.array([3.044, 0.9649, 67.36, 0.02237, 0.12, 0.06, -1.0, 0.0])
 
 
 @pytest.fixture
 def emulator_setup():
+    if os.environ.get("JAXMAPSE_NO_AUTO_DOWNLOAD"):
+        pytest.skip("artifact tests require auto-download enabled")
+
     # Strict check: Emulator MUST be present
     if EMULATOR_NAME not in jaxmapse.trained_emulators:
         pytest.fail(
@@ -200,3 +208,81 @@ def test_boost_differentiability(emulator_setup):
     assert grad.shape == p_hmcode.shape
     assert jnp.all(jnp.isfinite(grad))
     assert not jnp.allclose(grad, 0.0)
+
+
+@pytest.fixture
+def default_emulator():
+    if os.environ.get("JAXMAPSE_NO_AUTO_DOWNLOAD"):
+        pytest.skip("artifact tests require auto-download enabled")
+
+    name = jaxmapse.DEFAULT_EMULATOR_ARTIFACT
+    if name not in jaxmapse.trained_emulators:
+        pytest.fail(f"Default emulator '{name}' is not in trained_emulators.")
+
+    emu = jaxmapse.trained_emulators[name]
+    if emu is None:
+        pytest.fail(f"Default emulator '{name}' failed to load (value is None).")
+    return emu
+
+
+def _growth_for_default(params, z):
+    h = params[2] / 100.0
+    cosmo = w0waCDMCosmology(
+        ln10As=params[0],
+        ns=params[1],
+        h=h,
+        omega_b=params[3],
+        omega_c=params[4],
+        m_nu=params[5],
+        w0=params[6],
+        wa=params[7],
+    )
+    return cosmo.D_z(z)
+
+
+def test_default_artifact_component_grids(default_emulator):
+    assert default_emulator.linear_pmm.k_grid.shape == (300,)
+    assert default_emulator.linear_pkcb.k_grid.shape == (300,)
+    assert default_emulator.boost.k_grid.shape == (98,)
+    assert default_emulator.k_grid.shape == default_emulator.boost.k_grid.shape
+
+
+def test_default_artifact_public_workflow_scalar_z(default_emulator):
+    z = 0.0
+    D = _growth_for_default(DEFAULT_PARAMS, z)
+
+    pmm = default_emulator.get_linear_pmm(DEFAULT_PARAMS, z, D)
+    pkcb = default_emulator.get_linear_pkcb(DEFAULT_PARAMS, z, D)
+    boost = default_emulator.boost.get_Pk(DEFAULT_PARAMS, z, D)
+    pk = default_emulator.get_Pk(DEFAULT_PARAMS, z, D)
+
+    assert pmm.shape == (300,)
+    assert pkcb.shape == (300,)
+    assert boost.shape == (98,)
+    assert pk.shape == (98,)
+    assert jnp.all(jnp.isfinite(pk))
+    assert jnp.all(pk > 0.0)
+
+    expected = (
+        jnp.interp(
+            default_emulator.boost.k_grid, default_emulator.linear_pmm.k_grid, pmm
+        )
+        * boost
+    )
+    assert jnp.allclose(pk, expected, rtol=1.0e-10, atol=1.0e-10)
+
+
+def test_default_artifact_public_workflow_vector_z(default_emulator):
+    z = jnp.array([0.0, 0.5, 1.0])
+    D = _growth_for_default(DEFAULT_PARAMS, z)
+
+    pk = default_emulator.get_Pk(DEFAULT_PARAMS, z, D)
+    k_halofit, pk_halofit = default_emulator.get_halofit_pmm(DEFAULT_PARAMS, z)
+
+    assert pk.shape == (len(z), 98)
+    assert k_halofit.shape == (300,)
+    assert pk_halofit.shape == (len(z), 300)
+    assert jnp.all(jnp.isfinite(pk))
+    assert jnp.all(jnp.isfinite(pk_halofit))
+    assert jnp.all(pk > 0.0)
+    assert jnp.all(pk_halofit > 0.0)
