@@ -326,6 +326,24 @@
         
       
       
+        <label class="md-nav__link md-nav__link--active" for="__toc">
+          
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Home
+  
+
+    
+  </span>
+  
+  
+
+          <span class="md-nav__icon md-icon"></span>
+        </label>
+      
       <a href="." class="md-nav__link md-nav__link--active">
         
   
@@ -342,6 +360,69 @@
   
 
       </a>
+      
+        
+
+<nav class="md-nav md-nav--secondary" aria-label="Table of contents">
+  
+  
+  
+    
+  
+  
+    <label class="md-nav__title" for="__toc">
+      <span class="md-nav__icon md-icon"></span>
+      Table of contents
+    </label>
+    <ul class="md-nav__list" data-md-component="toc" data-md-scrollfix>
+      
+        <li class="md-nav__item">
+  <a href="#installation" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Installation
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#official-artifact-quickstart" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Official artifact quickstart
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#halofit" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Halofit
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#artifact-loading-policy" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Artifact loading policy
+      
+    </span>
+  </a>
+  
+</li>
+      
+    </ul>
+  
+</nav>
       
     </li>
   
@@ -394,6 +475,58 @@
     
   
   
+    <label class="md-nav__title" for="__toc">
+      <span class="md-nav__icon md-icon"></span>
+      Table of contents
+    </label>
+    <ul class="md-nav__list" data-md-component="toc" data-md-scrollfix>
+      
+        <li class="md-nav__item">
+  <a href="#installation" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Installation
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#official-artifact-quickstart" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Official artifact quickstart
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#halofit" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Halofit
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#artifact-loading-policy" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Artifact loading policy
+      
+    </span>
+  </a>
+  
+</li>
+      
+    </ul>
+  
 </nav>
                   </div>
                 </div>
@@ -413,8 +546,49 @@
 
 
 <h1 id="jaxmapse">jaxmapse</h1>
-<p>JAX-based implementation of the MAtter Power Spectrum Emulator (Mapse), mirroring the <a href="https://github.com/CosmologicalEmulators/Mapse.jl">Mapse.jl</a> repository.</p>
-<p>This package provides high-performance, differentiable emulators for the matter power spectrum, specifically designed for use in JAX-based cosmological inference pipelines.</p>
+<p>JAX implementation of the Matter Power Spectrum Emulator (<code>Mapse.jl</code>).</p>
+<p><code>jaxmapse</code> provides differentiable emulator evaluation, artifact-backed loading of official trained emulators, and JAX-native Halofit utilities.</p>
+<h2 id="installation">Installation</h2>
+<div class="highlight"><pre><span></span><code>pip<span class="w"> </span>install<span class="w"> </span>.
+</code></pre></div>
+<h2 id="official-artifact-quickstart">Official artifact quickstart</h2>
+<p>The official artifact registry is packaged with the wheel. By default, official trained emulators are loaded into <code>jaxmapse.trained_emulators</code> when the package is imported.</p>
+<div class="highlight"><pre><span></span><code><span class="kn">import</span><span class="w"> </span><span class="nn">jax.numpy</span><span class="w"> </span><span class="k">as</span><span class="w"> </span><span class="nn">jnp</span>
+<span class="kn">import</span><span class="w"> </span><span class="nn">jaxmapse</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">jaxmapse</span><span class="w"> </span><span class="kn">import</span> <span class="n">w0waCDMCosmology</span>
+
+<span class="n">emu</span> <span class="o">=</span> <span class="n">jaxmapse</span><span class="o">.</span><span class="n">trained_emulators</span><span class="p">[</span><span class="n">jaxmapse</span><span class="o">.</span><span class="n">DEFAULT_EMULATOR_ARTIFACT</span><span class="p">]</span>
+
+<span class="c1"># Default mnuw0wacdm parameter order:</span>
+<span class="c1"># [ln10As, ns, H0, omega_b, omega_c, Mnu, w0, wa]</span>
+<span class="n">params</span> <span class="o">=</span> <span class="n">jnp</span><span class="o">.</span><span class="n">array</span><span class="p">([</span><span class="mf">3.044</span><span class="p">,</span> <span class="mf">0.9649</span><span class="p">,</span> <span class="mf">67.36</span><span class="p">,</span> <span class="mf">0.02237</span><span class="p">,</span> <span class="mf">0.12</span><span class="p">,</span> <span class="mf">0.06</span><span class="p">,</span> <span class="o">-</span><span class="mf">1.0</span><span class="p">,</span> <span class="mf">0.0</span><span class="p">])</span>
+<span class="n">z</span> <span class="o">=</span> <span class="mf">0.0</span>
+
+<span class="n">cosmo</span> <span class="o">=</span> <span class="n">w0waCDMCosmology</span><span class="p">(</span>
+    <span class="n">ln10As</span><span class="o">=</span><span class="n">params</span><span class="p">[</span><span class="mi">0</span><span class="p">],</span>
+    <span class="n">ns</span><span class="o">=</span><span class="n">params</span><span class="p">[</span><span class="mi">1</span><span class="p">],</span>
+    <span class="n">h</span><span class="o">=</span><span class="n">params</span><span class="p">[</span><span class="mi">2</span><span class="p">]</span> <span class="o">/</span> <span class="mf">100.0</span><span class="p">,</span>
+    <span class="n">omega_b</span><span class="o">=</span><span class="n">params</span><span class="p">[</span><span class="mi">3</span><span class="p">],</span>
+    <span class="n">omega_c</span><span class="o">=</span><span class="n">params</span><span class="p">[</span><span class="mi">4</span><span class="p">],</span>
+    <span class="n">m_nu</span><span class="o">=</span><span class="n">params</span><span class="p">[</span><span class="mi">5</span><span class="p">],</span>
+    <span class="n">w0</span><span class="o">=</span><span class="n">params</span><span class="p">[</span><span class="mi">6</span><span class="p">],</span>
+    <span class="n">wa</span><span class="o">=</span><span class="n">params</span><span class="p">[</span><span class="mi">7</span><span class="p">],</span>
+<span class="p">)</span>
+<span class="n">D</span> <span class="o">=</span> <span class="n">cosmo</span><span class="o">.</span><span class="n">D_z</span><span class="p">(</span><span class="n">z</span><span class="p">)</span>
+
+<span class="n">k</span> <span class="o">=</span> <span class="n">emu</span><span class="o">.</span><span class="n">k_grid</span>
+<span class="n">pk_nonlinear</span> <span class="o">=</span> <span class="n">emu</span><span class="o">.</span><span class="n">get_Pk</span><span class="p">(</span><span class="n">params</span><span class="p">,</span> <span class="n">z</span><span class="p">,</span> <span class="n">D</span><span class="p">)</span>
+</code></pre></div>
+<p>For the default artifact, the linear components use a 300-point grid and the nonlinear boost uses a 98-point grid. The top-level <code>emu.get_Pk(...)</code> returns nonlinear <code>Pmm</code> on the boost grid after interpolating linear <code>Pmm</code> onto that grid.</p>
+<h2 id="halofit">Halofit</h2>
+<div class="highlight"><pre><span></span><code><span class="n">k_halofit</span><span class="p">,</span> <span class="n">pk_halofit</span> <span class="o">=</span> <span class="n">emu</span><span class="o">.</span><span class="n">get_halofit_pmm</span><span class="p">(</span><span class="n">params</span><span class="p">,</span> <span class="n">jnp</span><span class="o">.</span><span class="n">array</span><span class="p">([</span><span class="mf">0.0</span><span class="p">,</span> <span class="mf">0.5</span><span class="p">,</span> <span class="mf">1.0</span><span class="p">]))</span>
+</code></pre></div>
+<p>Vector-redshift outputs use the jaxmapse convention <code>(len(z), len(k))</code>.</p>
+<h2 id="artifact-loading-policy">Artifact loading policy</h2>
+<p>Set this environment variable to disable eager artifact loading on import:</p>
+<div class="highlight"><pre><span></span><code><span class="nb">export</span><span class="w"> </span><span class="nv">JAXMAPSE_NO_AUTO_DOWNLOAD</span><span class="o">=</span><span class="m">1</span>
+</code></pre></div>
+<p>Real-artifact tests are marked with the <code>artifact</code> pytest marker.</p>
 
 
 

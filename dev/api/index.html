@@ -404,6 +404,17 @@
     <ul class="md-nav__list" data-md-component="toc" data-md-scrollfix>
       
         <li class="md-nav__item">
+  <a href="#emulator-loading-and-pk-api" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Emulator loading and P(k) API
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
   <a href="#jaxmapse.jaxmapse" class="md-nav__link">
     <span class="md-ellipsis">
       
@@ -544,6 +555,17 @@
 </li>
         
           <li class="md-nav__item">
+  <a href="#jaxmapse.jaxmapse.default_artifacts_toml" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        default_artifacts_toml
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
   <a href="#jaxmapse.jaxmapse.load_emulator" class="md-nav__link">
     <span class="md-ellipsis">
       
@@ -600,6 +622,17 @@
         
       </ul>
     </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#halofit" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Halofit
+      
+    </span>
+  </a>
   
 </li>
       
@@ -692,6 +725,45 @@
     <span class="md-ellipsis">
       
         halofit_pmm_from_params
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#primordial-spectra" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Primordial spectra
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#jaxmapse.primordial" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        primordial
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="primordial">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#jaxmapse.primordial.primordial_Pk" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        primordial_Pk
       
     </span>
   </a>
@@ -738,6 +810,17 @@
     <ul class="md-nav__list" data-md-component="toc" data-md-scrollfix>
       
         <li class="md-nav__item">
+  <a href="#emulator-loading-and-pk-api" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Emulator loading and P(k) API
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
   <a href="#jaxmapse.jaxmapse" class="md-nav__link">
     <span class="md-ellipsis">
       
@@ -878,6 +961,17 @@
 </li>
         
           <li class="md-nav__item">
+  <a href="#jaxmapse.jaxmapse.default_artifacts_toml" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        default_artifacts_toml
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
   <a href="#jaxmapse.jaxmapse.load_emulator" class="md-nav__link">
     <span class="md-ellipsis">
       
@@ -934,6 +1028,17 @@
         
       </ul>
     </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#halofit" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Halofit
+      
+    </span>
+  </a>
   
 </li>
       
@@ -1037,6 +1142,45 @@
   
 </li>
       
+        <li class="md-nav__item">
+  <a href="#primordial-spectra" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Primordial spectra
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#jaxmapse.primordial" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        primordial
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="primordial">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#jaxmapse.primordial.primordial_Pk" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        primordial_Pk
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
     </ul>
   
 </nav>
@@ -1058,6 +1202,7 @@
 
 
 <h1 id="api-reference">API Reference</h1>
+<h2 id="emulator-loading-and-pk-api">Emulator loading and P(k) API</h2>
 
 
 <div class="doc doc-object doc-module">
@@ -1268,7 +1413,12 @@
 
     <div class="doc doc-contents ">
 
-        <p>Returns P_mm,lin * Boost.</p>
+        <p>Returns nonlinear <code>Pmm</code> on the top-level output grid.</p>
+<p>The official <code>mnuw0wacdm_class</code> artifact has different component
+grids: the linear spectra live on a 300-point grid, while the nonlinear
+boost lives on a 98-point grid. The top-level nonlinear result is
+therefore returned on <code>self.boost.k_grid</code> after interpolating linear
+<code>Pmm</code> onto that grid.</p>
 
 
     </div>
@@ -1359,6 +1509,24 @@ outputs follow the jaxmapse convention <code>(len(z), len(k))</code>.</p>
 
         <p>Computes PCA on the training targets.
 Returns: mean vector, basis matrix, and PCA coefficients.</p>
+
+
+    </div>
+
+</div>
+
+<div class="doc doc-object doc-function">
+
+
+<h3 id="jaxmapse.jaxmapse.default_artifacts_toml" class="doc doc-heading">
+            <code class="highlight language-python"><span class="n">default_artifacts_toml</span><span class="p">()</span></code>
+
+</h3>
+
+
+    <div class="doc doc-contents ">
+
+        <p>Return the packaged artifact registry path.</p>
 
 
     </div>
@@ -1461,7 +1629,8 @@ Returns: mean vector, basis matrix, and PCA coefficients.</p>
 
     </div>
 
-</div>
+</div><h2 id="halofit">Halofit</h2>
+
 
 <div class="doc doc-object doc-module">
 
@@ -1567,7 +1736,10 @@ as a JIT argument.</p>
 <p>Returns <code>(omega_m_z, omega_v_z)</code> for scalar or vector redshift <code>z</code>.
 This helper uses the same jaxace background convention used elsewhere in
 jaxmapse. The matter term includes CDM+baryons plus the jaxace massive
-neutrino energy-density contribution.</p>
+neutrino energy-density contribution. This is intentionally not forced to
+equal the simple non-relativistic density bookkeeping stored in
+:class:<code>HalofitCosmology</code> at exactly <code>z=0</code>; explicit background arrays are
+the source of truth for the Halofit kernel.</p>
 <p>The calculation is intentionally separate from :func:<code>halofit_pmm</code>, so
 callers can still inject CLASS/CAMB/emulator background arrays when they
 want a controlled comparison.</p>
@@ -1646,6 +1818,154 @@ omega_m_z, omega_v_z
     <div class="doc doc-contents ">
 
         <p>Convenience wrapper constructing <code>HalofitCosmology</code> from MAPSE params.</p>
+
+
+    </div>
+
+</div>
+
+
+
+  </div>
+
+    </div>
+
+</div><h2 id="primordial-spectra">Primordial spectra</h2>
+
+
+<div class="doc doc-object doc-module">
+
+
+
+<h2 id="jaxmapse.primordial" class="doc doc-heading">
+            <code>jaxmapse.primordial</code>
+
+
+</h2>
+
+    <div class="doc doc-contents first">
+
+
+
+
+
+
+
+
+
+
+<div class="doc doc-children">
+
+
+
+
+
+
+
+
+
+
+<div class="doc doc-object doc-function">
+
+
+<h3 id="jaxmapse.primordial.primordial_Pk" class="doc doc-heading">
+            <code class="highlight language-python"><span class="n">primordial_Pk</span><span class="p">(</span><span class="n">As</span><span class="p">,</span> <span class="n">ns</span><span class="p">,</span> <span class="n">k</span><span class="p">)</span></code>
+
+</h3>
+
+
+    <div class="doc doc-contents ">
+
+        <p>Compute the primordial power spectrum.</p>
+<p>Matches Mapse.jl implementation:
+return @. As * (k/0.05)^(ns-1)/k^3 * (k^2*c0^2)^2
+where c0 = 2.99792458E8 (m/s)</p>
+
+
+<p><span class="doc-section-title">Parameters:</span></p>
+    <table>
+      <thead>
+        <tr>
+          <th>Name</th>
+          <th>Type</th>
+          <th>Description</th>
+          <th>Default</th>
+        </tr>
+      </thead>
+      <tbody>
+          <tr class="doc-section-item">
+            <td>
+                <code>As</code>
+            </td>
+            <td>
+                  <code><span title="typing.Union">Union</span>[<span title="float">float</span>, <span title="jax.numpy.ndarray">ndarray</span>]</code>
+            </td>
+            <td>
+              <div class="doc-md-description">
+                <p>Scalar amplitude</p>
+              </div>
+            </td>
+            <td>
+                <em>required</em>
+            </td>
+          </tr>
+          <tr class="doc-section-item">
+            <td>
+                <code>ns</code>
+            </td>
+            <td>
+                  <code><span title="typing.Union">Union</span>[<span title="float">float</span>, <span title="jax.numpy.ndarray">ndarray</span>]</code>
+            </td>
+            <td>
+              <div class="doc-md-description">
+                <p>Scalar spectral index</p>
+              </div>
+            </td>
+            <td>
+                <em>required</em>
+            </td>
+          </tr>
+          <tr class="doc-section-item">
+            <td>
+                <code>k</code>
+            </td>
+            <td>
+                  <code><span title="typing.Union">Union</span>[<span title="float">float</span>, <span title="jax.numpy.ndarray">ndarray</span>]</code>
+            </td>
+            <td>
+              <div class="doc-md-description">
+                <p>Wavenumber (or array of wavenumbers)</p>
+              </div>
+            </td>
+            <td>
+                <em>required</em>
+            </td>
+          </tr>
+      </tbody>
+    </table>
+
+
+    <p><span class="doc-section-title">Returns:</span></p>
+    <table>
+      <thead>
+        <tr>
+          <th>Type</th>
+          <th>Description</th>
+        </tr>
+      </thead>
+      <tbody>
+          <tr class="doc-section-item">
+            <td>
+                  <code><span title="typing.Union">Union</span>[<span title="float">float</span>, <span title="jax.numpy.ndarray">ndarray</span>]</code>
+            </td>
+            <td>
+              <div class="doc-md-description">
+                <p>Primordial power spectrum</p>
+              </div>
+            </td>
+          </tr>
+      </tbody>
+    </table>
 
 
     </div>
