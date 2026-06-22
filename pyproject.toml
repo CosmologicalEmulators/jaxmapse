@@ -1,0 +1,36 @@
+[tool.poetry]
+name = "jaxmapse"
+version = "0.1.1"
+description = "JAX-based Matter Power Spectrum Emulator mirroring Mapse.jl"
+authors = ["mbonici <bonici.marco@gmail.com>"]
+readme = "README.md"
+packages = [{include = "jaxmapse"}]
+include = [{path = "jaxmapse/Artifacts.toml", format = ["sdist", "wheel"]}]
+
+[tool.poetry.dependencies]
+python = "^3.10"
+jax = ">=0.4.30"
+flax = "^0.10.0"
+numpy = "^2.2.6"
+jaxace = "^0.4.1"
+jaxtyping = "^0.2.0"
+fetch-artifacts = "^0.1.0"
+
+[tool.poetry.group.dev.dependencies]
+pytest = "^7.0.0"
+pytest-cov = "^4.0.0"
+ruff = "^0.1.0"
+black = "^24.0.0"
+isort = "^5.13.0"
+tomli = {version = "^2.0.0", python = "<3.11"}
+
+[build-system]
+requires = ["poetry-core"]
+build-backend = "poetry.core.masonry.api"
+
+[tool.isort]
+profile = "black"
+line_length = 88
+
+[tool.pytest.ini_options]
+markers = ["artifact: tests requiring real artifact loading/download"]
