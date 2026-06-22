@@ -1,6 +1,6 @@
 [tool.poetry]
 name = "jaxmapse"
-version = "0.1.0"
+version = "0.1.1"
 description = "JAX-based Matter Power Spectrum Emulator mirroring Mapse.jl"
 authors = ["mbonici <bonici.marco@gmail.com>"]
 readme = "README.md"
@@ -9,8 +9,7 @@ include = [{path = "jaxmapse/Artifacts.toml", format = ["sdist", "wheel"]}]
 
 [tool.poetry.dependencies]
 python = "^3.10"
-jax = "^0.4.0"
-jaxlib = "^0.4.0"
+jax = ">=0.4.30"
 flax = "^0.10.0"
 numpy = "^2.2.6"
 jaxace = "^0.4.1"
