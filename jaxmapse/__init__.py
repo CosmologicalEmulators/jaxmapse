@@ -18,6 +18,22 @@ from jaxace.background import (
     w0waCDMCosmology,
 )
 
+try:
+    from jax.tree_util import register_pytree_node
+    try:
+        register_pytree_node(
+            w0waCDMCosmology,
+            lambda x: (
+                (x.ln10As, x.ns, x.h, x.omega_b, x.omega_c, x.omega_k, x.m_nu, x.w0, x.wa),
+                None
+            ),
+            lambda aux_data, children: w0waCDMCosmology(*children)
+        )
+    except ValueError:
+        pass
+except Exception:
+    pass
+
 from .halofit import (
     HalofitCosmology,
     halofit_background,
@@ -52,6 +68,8 @@ from .jaxmapse import (
     load_trained_emulators,
     halofit_pmm_from_emulator,
     get_halofit_pmm,
+    hmcode_pmm_from_emulator,
+    get_hmcode_pmm,
 )
 from .primordial import primordial_Pk
 
@@ -73,6 +91,8 @@ __all__ = [
     "load_trained_emulators",
     "halofit_pmm_from_emulator",
     "get_halofit_pmm",
+    "hmcode_pmm_from_emulator",
+    "get_hmcode_pmm",
     "halofit_background",
     "halofit_cosmology",
     "halofit_pmm",

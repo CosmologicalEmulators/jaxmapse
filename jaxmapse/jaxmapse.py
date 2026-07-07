@@ -430,3 +430,213 @@ def save_pca_metadata(path: str, mu: Array, basis: Array):
     """
     jnp.save(os.path.join(path, "pca_mean.npy"), mu)
     jnp.save(os.path.join(path, "pca_projection.npy"), basis)
+
+
+def _parse_params(params, kwargs):
+    p_dict = {}
+    if isinstance(params, dict):
+        p_dict.update(params)
+    elif params is not None:
+        try:
+            if hasattr(params, 'shape'):
+                if params.ndim == 1 and params.shape[0] == 8:
+                    return params
+            elif hasattr(params, '__len__') and len(params) == 8:
+                return jnp.asarray(params)
+        except Exception:
+            pass
+        if hasattr(params, '_asdict'):
+            p_dict.update(params._asdict())
+        elif hasattr(params, '__dict__'):
+            p_dict.update(params.__dict__)
+            
+    p_dict.update(kwargs)
+    
+    ln10As = p_dict.get('ln10As', p_dict.get('logA', p_dict.get('A_s', None)))
+    if ln10As is None:
+        raise ValueError('Missing parameter ln10As')
+    ns = p_dict.get('ns', p_dict.get('n_s', None))
+    if ns is None:
+        raise ValueError('Missing parameter ns')
+    H0 = p_dict.get('H0', None)
+    h = p_dict.get('h', None)
+    if H0 is None:
+        if h is not None:
+            H0 = h * 100.0
+        else:
+            raise ValueError('Missing parameter H0 or h')
+    omega_b = p_dict.get('omega_b', p_dict.get('omega_b_h2', p_dict.get('ombh2', None)))
+    if omega_b is None:
+        raise ValueError('Missing parameter omega_b')
+    omega_c = p_dict.get('omega_c', p_dict.get('omega_cdm', p_dict.get('omch2', None)))
+    if omega_c is None:
+        raise ValueError('Missing parameter omega_c')
+    Mnu = p_dict.get('Mnu', p_dict.get('m_nu', p_dict.get('mnu', 0.0)))
+    w0 = p_dict.get('w0', -1.0)
+    wa = p_dict.get('wa', 0.0)
+    
+    return jnp.stack([ln10As, ns, H0, omega_b, omega_c, Mnu, w0, wa])
+
+
+def hmcode_pmm_from_emulator(
+    input_params: Optional[Union[Array, dict]] = None,
+    z: Optional[Union[float, Array]] = None,
+    *,
+    D: Optional[Union[float, Array]] = None,
+    linear_pmm_emu: Optional[TransferFunctionEmulator] = None,
+    linear_pcb_emu: Optional[TransferFunctionEmulator] = None,
+    T_AGN: Optional[float] = None,
+    accuracy: float = 1.0,
+    nM: Optional[int] = None,
+    k_out: Optional[Array] = None,
+    **kwargs,
+) -> tuple[Array, Array]:
+    """
+    Evaluate the linear matter power spectrum (and optional cb spectrum) from emulators,
+    compute sigma_8 natively, and apply HMCode2020 non-linear correction.
+
+    Parameters:
+    -----------
+    input_params: Array or dict, optional
+        Cosmological parameters. Can be a flat array in order [ln10As, ns, H0, omega_b, omega_c, Mnu, w0, wa],
+        or a dictionary with keys (e.g. ln10As, ns, h, ombh2, omch2, mnu, w0, wa).
+    z: float or Array, optional
+        Redshift(s) at which to evaluate the power spectrum.
+    D: float or Array, optional
+        Linear growth factor. If None, it is calculated natively in JAX from the input parameters.
+    linear_pmm_emu: TransferFunctionEmulator, optional
+        The linear matter power spectrum emulator. If None, loads the default built-in emulator.
+    linear_pcb_emu: TransferFunctionEmulator, optional
+        The linear cb (baryons + CDM) power spectrum emulator. If None, loads the default built-in emulator.
+    T_AGN: float, optional
+        Baryon feedback temperature log10(T_AGN/K). If None, uses Dark Matter Only (DMO).
+    accuracy: float, optional
+        HMCode integration accuracy (default: 1.0).
+    nM: int, optional
+        Number of mass integration steps (default: 256 * accuracy).
+    k_out: Array, optional
+        Custom physical wavenumbers (Mpc^-1) for output. If None, uses the emulator's k grid.
+    kwargs:
+        Cosmological parameters can also be passed directly as keyword arguments.
+
+    Returns:
+    --------
+    k: Array
+        Wavenumbers in physical units (Mpc^-1).
+    pk_nl: Array
+        Non-linear matter power spectrum in physical units (Mpc^3).
+    """
+    from jaxace.background import w0waCDMCosmology
+    from .hmcode import HMCodeCosmology, hmcode_pmm_jax, _sigma_grid_jax
+
+    # Determine if the first argument was actually the redshift z
+    is_first_arg_z = False
+    if input_params is not None:
+        if isinstance(input_params, (float, int)):
+            is_first_arg_z = True
+        elif not isinstance(input_params, dict) and hasattr(input_params, "__len__"):
+            if len(input_params) != 8:
+                is_first_arg_z = True
+
+    if is_first_arg_z:
+        if z is not None:
+            raise ValueError("z passed both positionally and as keyword/second argument.")
+        z = input_params
+        input_params = None
+
+    if z is None:
+        raise ValueError("Missing required parameter 'z'.")
+
+    params = _parse_params(input_params, kwargs)
+    z_arr = jnp.atleast_1d(z)
+    h = jnp.where(params[2] > 10.0, params[2] / 100.0, params[2])
+
+    if D is None:
+        growth_cosmology = w0waCDMCosmology(
+            ln10As=params[0],
+            ns=params[1],
+            h=h,
+            omega_b=params[3],
+            omega_c=params[4],
+            m_nu=params[5],
+            w0=params[6],
+            wa=params[7],
+        )
+        D = growth_cosmology.D_z(z_arr)
+
+    # Load emulators if not provided
+    if linear_pmm_emu is None or linear_pcb_emu is None:
+        emus = load_trained_emulators()[DEFAULT_EMULATOR_ARTIFACT]
+        if linear_pmm_emu is None:
+            linear_pmm_emu = emus["pmm"]
+        if linear_pcb_emu is None:
+            linear_pcb_emu = emus["pcb"]
+
+    k_support = linear_pmm_emu.k_grid
+    if k_out is None:
+        k = k_support
+    else:
+        k = jnp.asarray(k_out)
+
+    # Predict linear spectra (in physical units)
+    pk_lin_mm = _evaluate_emu(linear_pmm_emu, params, z_arr, D)
+    pk_lin_cb = _evaluate_emu(linear_pcb_emu, params, z_arr, D)
+
+    # Convert linear spectra to h-units for jaxmapse input
+    k_h = k / h
+    k_support_h = k_support / h
+    Pmm_lin_h = pk_lin_mm * (h**3)
+    Pcb_lin_h = pk_lin_cb * (h**3)
+
+    # Predict at z=0 to calculate sigma_8 natively
+    pk_lin_mm_z0 = _evaluate_emu(linear_pmm_emu, params, 0.0, 1.0)
+    Pmm_lin_h_z0 = pk_lin_mm_z0 * (h**3)
+    sigma_8_jax = _sigma_grid_jax(k_support_h, Pmm_lin_h_z0[None, :], jnp.array([8.0]))[0, 0]
+
+    # Setup jaxmapse cosmology
+    omega_nu = (params[5] / 93.14) / h**2
+    omega_m = (params[3] + params[4]) / h**2 + omega_nu
+    omega_b_h2 = params[3] / h**2
+    hmcode_cosmo = HMCodeCosmology(
+        Omega_m=omega_m,
+        Omega_b=omega_b_h2,
+        h=h,
+        n_s=params[1],
+        sigma_8=sigma_8_jax,
+        w0=params[6],
+        wa=params[7],
+        Omega_nu=omega_nu,
+        Omega_k=0.0,
+    )
+
+    # Ensure 2D arrays for JAX-native solver
+    import math
+    Pmm_lin_h_2d = jnp.atleast_2d(Pmm_lin_h)
+    Pcb_lin_h_2d = jnp.atleast_2d(Pcb_lin_h)
+    if nM is None:
+        nM = int(math.ceil(256 * accuracy))
+
+    # Solve non-linear HMCode2020 natively in JAX (JIT friendly)
+    Pmm_jax_h = hmcode_pmm_jax(
+        hmcode_cosmo,
+        z_arr,
+        k_h,
+        k_support_h,
+        Pmm_lin_h_2d,
+        Pcb_lin_h_2d,
+        T_AGN=10.0**7.8 if T_AGN is None else T_AGN,
+        Mmin=1.0,
+        Mmax=1.0e18,
+        nM=nM,
+        include_feedback=T_AGN is not None,
+    )
+
+    # Convert output back to physical units and match input dimension
+    pk_nl_2d = Pmm_jax_h / (h**3)
+    pk_nl = pk_nl_2d[0] if jnp.ndim(z) == 0 else pk_nl_2d
+
+    return k, pk_nl
+
+
+get_hmcode_pmm = hmcode_pmm_from_emulator
+

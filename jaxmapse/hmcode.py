@@ -21,6 +21,23 @@ from jaxtyping import Array
 
 jax.config.update("jax_enable_x64", True)
 
+try:
+    from jaxace.background import w0waCDMCosmology
+    from jax.tree_util import register_pytree_node
+    try:
+        register_pytree_node(
+            w0waCDMCosmology,
+            lambda x: (
+                (x.ln10As, x.ns, x.h, x.omega_b, x.omega_c, x.omega_k, x.m_nu, x.w0, x.wa),
+                None
+            ),
+            lambda aux_data, children: w0waCDMCosmology(*children)
+        )
+    except ValueError:
+        pass
+except ImportError:
+    pass
+
 RHO_CRITICAL = 2.77536627245708e11  # Msun/h / (Mpc/h)^3
 DV0 = 18.0 * jnp.pi**2
 DC0 = (3.0 / 20.0) * (12.0 * jnp.pi) ** (2.0 / 3.0)
@@ -44,6 +61,53 @@ class HMCodeCosmology(NamedTuple):
     wa: float
     Omega_nu: float = 0.0
     Omega_k: float = 0.0
+
+
+def _normalize_cosmo(cosmo) -> HMCodeCosmology:
+    if isinstance(cosmo, HMCodeCosmology):
+        return cosmo
+    
+    # Try reading as w0waCDMCosmology or dict
+    if isinstance(cosmo, dict):
+        h = cosmo.get("h")
+        ns = cosmo.get("ns", cosmo.get("n_s"))
+        omega_b = cosmo.get("omega_b")
+        omega_c = cosmo.get("omega_c", cosmo.get("omega_cdm"))
+        m_nu = cosmo.get("m_nu", cosmo.get("Mnu", 0.0))
+        omega_k = cosmo.get("omega_k", 0.0)
+        w0 = cosmo.get("w0", -1.0)
+        wa = cosmo.get("wa", 0.0)
+        sigma_8 = cosmo.get("sigma_8", 0.0)
+    else:
+        # Dataclass w0waCDMCosmology or similar object
+        h = cosmo.h
+        ns = getattr(cosmo, "ns", getattr(cosmo, "n_s", 0.9649))
+        omega_b = cosmo.omega_b
+        omega_c = getattr(cosmo, "omega_c", getattr(cosmo, "omega_cdm", 0.12))
+        m_nu = getattr(cosmo, "m_nu", getattr(cosmo, "Mnu", 0.0))
+        omega_k = getattr(cosmo, "omega_k", getattr(cosmo, "Omega_k", 0.0))
+        w0 = getattr(cosmo, "w0", -1.0)
+        wa = getattr(cosmo, "wa", 0.0)
+        sigma_8 = getattr(cosmo, "sigma_8", 0.0)
+        
+    omega_nu = m_nu / 93.14
+    omega_m = omega_b + omega_c + omega_nu
+    Omega_m = omega_m / h**2
+    Omega_b = omega_b / h**2
+    Omega_nu = omega_nu / h**2
+    Omega_k = omega_k / h**2
+    
+    return HMCodeCosmology(
+        Omega_m=Omega_m,
+        Omega_b=Omega_b,
+        h=h,
+        n_s=ns,
+        sigma_8=sigma_8,
+        w0=w0,
+        wa=wa,
+        Omega_nu=Omega_nu,
+        Omega_k=Omega_k,
+    )
 
 
 class HMCodeParams(NamedTuple):
@@ -573,7 +637,7 @@ def _assemble_pass_jax(k, z, cosmo, M, R, params, sigma_zm, nu_zm, pk_lin_zk, pk
 
 @partial(jax.jit, static_argnames=("nM", "include_feedback"))
 def hmcode_pmm_jax(
-    cosmo: HMCodeCosmology,
+    cosmo,
     z: Array,
     k: Array,
     k_support: Array,
@@ -592,6 +656,7 @@ def hmcode_pmm_jax(
     ``(len(z), len(k_support))``. ``nM`` and ``include_feedback`` are static JIT
     arguments.
     """
+    cosmo = _normalize_cosmo(cosmo)
     z = jnp.asarray(z)
     k = jnp.asarray(k)
     k_support = jnp.asarray(k_support)
@@ -673,7 +738,7 @@ def hmcode_pmm_jax(
 
 
 def hmcode_pmm(
-    cosmo: HMCodeCosmology,
+    cosmo,
     z: Array,
     k: Array,
     pk_mm_z: Array,
@@ -694,6 +759,7 @@ def hmcode_pmm(
     both support and output grid. ``pk_cb_z``/``pk_cb_support_z`` supplies the
     cold+baryon linear spectrum used for HMCode internal σ(R) quantities.
     """
+    cosmo = _normalize_cosmo(cosmo)
     scalar_z = np.asarray(z).ndim == 0
     z_arr = _as_1d(z, "z")
     k_out = np.asarray(k, dtype=float)
