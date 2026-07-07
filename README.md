@@ -21,14 +21,17 @@ pip install .
 
 ## Quickstart
 
-The official default artifact is loaded into `jaxmapse.trained_emulators` when the package is imported, unless `JAXMAPSE_NO_AUTO_DOWNLOAD=1` is set.
+To use `jaxmapse`, resolve the emulator artifact path and load the desired transfer function component explicitly:
 
 ```python
 import jax.numpy as jnp
 import jaxmapse
 from jaxmapse import w0waCDMCosmology
 
-emu = jaxmapse.trained_emulators[jaxmapse.DEFAULT_EMULATOR_ARTIFACT]
+# Resolve path to the default mnuw0wacdm_class artifact and load components
+root = jaxmapse.artifact_path(jaxmapse.DEFAULT_EMULATOR_ARTIFACT)
+pmm = jaxmapse.load_emulator(root / "Pk_lin_mm")
+pcb = jaxmapse.load_emulator(root / "Pk_lin_cb")
 
 # Parameter order for the default mnuw0wacdm artifact:
 # [ln10As, ns, H0, omega_b, omega_c, Mnu, w0, wa]
@@ -47,29 +50,22 @@ cosmo = w0waCDMCosmology(
 )
 D = cosmo.D_z(z)
 
-k = emu.k_grid
-pk_nonlinear = emu.get_Pk(params, z, D)
+# Evaluate the linear total-matter power spectrum on its k-grid (300 points)
+k_grid = pmm.k_grid
+pk_linear = pmm(params, z, D)
 ```
 
-For the default artifact the linear components are stored on a 300-point `k` grid and the nonlinear boost is stored on a 98-point `k` grid. The top-level `emu.get_Pk(...)` interpolates the linear `Pmm` prediction onto the boost grid and returns nonlinear `Pmm` on `emu.k_grid == emu.boost.k_grid`.
-
-To compute nonlinear `Pmm` from the linear emulator with JAX-native Halofit:
+To compute nonlinear `Pmm` from the linear emulator using JAX-native Halofit:
 
 ```python
-k_halofit, pk_halofit = emu.get_halofit_pmm(params, jnp.array([0.0, 0.5, 1.0]))
+k_halofit, pk_halofit = jaxmapse.get_halofit_pmm(
+    params, z, D, linear_pmm_emu=pmm
+)
 ```
 
 Vector-redshift outputs use the jaxmapse convention `(len(z), len(k))`.
 
-## Artifact loading
 
-`Artifacts.toml` is packaged inside the `jaxmapse` wheel and discovered through Python package resources. To disable eager artifact loading on import, set:
-
-```bash
-export JAXMAPSE_NO_AUTO_DOWNLOAD=1
-```
-
-This is useful for fast local unit tests or offline imports. Real-artifact tests are marked with the `artifact` pytest marker.
 
 ## Background cosmology
 
