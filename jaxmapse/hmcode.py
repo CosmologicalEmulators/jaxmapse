@@ -157,13 +157,9 @@ def _validate_inputs(z, k_out, k_support, pk_mm, pk_cb):
         raise ValueError("HMCode linear spectra must be strictly positive.")
 
 
-def _hmcode_mass_steps(nM, accuracy):
-    if accuracy <= 0.0:
-        raise ValueError("HMCode accuracy must be positive.")
+def _hmcode_mass_steps(nM):
     if nM is None:
-        return max(16, int(np.ceil(256 * accuracy)))
-    if accuracy != 1.0:
-        raise ValueError("Pass either accuracy or nM, not both.")
+        return 128
     if nM < 2:
         raise ValueError("HMCode nM must be at least 2.")
     return int(nM)
@@ -647,7 +643,7 @@ def hmcode_pmm_jax(
     T_AGN: float = 10.0**7.8,
     Mmin: float = 1.0,
     Mmax: float = 1.0e18,
-    nM: int = 256,
+    nM: int = 128,
     include_feedback: bool = True,
 ) -> Array:
     """Pure-JAX HMCode2020 kernel.
@@ -749,8 +745,7 @@ def hmcode_pmm(
     T_AGN: Optional[float] = 10.0**7.8,
     Mmin: float = 1.0,
     Mmax: float = 1.0e18,
-    nM: Optional[int] = None,
-    accuracy: float = 1.0,
+    nM: int = 128,
 ) -> Array:
     """Compute HMCode2020 nonlinear total-matter ``Pmm``.
 
@@ -774,7 +769,7 @@ def hmcode_pmm(
     if pk_cb.ndim == 1:
         pk_cb = pk_cb[None, :]
     _validate_inputs(z_arr, k_out, k_sup, pk_mm, pk_cb)
-    nM_eff = _hmcode_mass_steps(nM, accuracy)
+    nM_eff = _hmcode_mass_steps(nM)
     out = hmcode_pmm_jax(
         cosmo,
         jnp.asarray(z_arr),

@@ -417,8 +417,8 @@ def load_trained_emulators(force_reload: bool = False):
     root = artifact_path(DEFAULT_EMULATOR_ARTIFACT)
     _TRAINED_EMULATORS_CACHE = {
         DEFAULT_EMULATOR_ARTIFACT: {
-            "pmm": load_emulator(str(root / "Pk_lin_mm"), preset="mnuw0wacdm_linear"),
-            "pcb": load_emulator(str(root / "Pk_lin_cb"), preset="mnuw0wacdm_linear"),
+            "pmm": load_emulator(str(root / "Pk_lin_mm")),
+            "pcb": load_emulator(str(root / "Pk_lin_cb")),
         }
     }
     return _TRAINED_EMULATORS_CACHE
@@ -486,8 +486,7 @@ def hmcode_pmm_from_emulator(
     linear_pmm_emu: Optional[TransferFunctionEmulator] = None,
     linear_pcb_emu: Optional[TransferFunctionEmulator] = None,
     T_AGN: Optional[float] = None,
-    accuracy: float = 1.0,
-    nM: Optional[int] = None,
+    nM: int = 128,
     k_out: Optional[Array] = None,
     **kwargs,
 ) -> tuple[Array, Array]:
@@ -510,10 +509,8 @@ def hmcode_pmm_from_emulator(
         The linear cb (baryons + CDM) power spectrum emulator. If None, loads the default built-in emulator.
     T_AGN: float, optional
         Baryon feedback temperature log10(T_AGN/K). If None, uses Dark Matter Only (DMO).
-    accuracy: float, optional
-        HMCode integration accuracy (default: 1.0).
     nM: int, optional
-        Number of mass integration steps (default: 256 * accuracy).
+        Number of mass integration steps (default: 128).
     k_out: Array, optional
         Custom physical wavenumbers (Mpc^-1) for output. If None, uses the emulator's k grid.
     kwargs:
@@ -609,12 +606,11 @@ def hmcode_pmm_from_emulator(
         Omega_k=0.0,
     )
 
-    # Ensure 2D arrays for JAX-native solver
-    import math
     Pmm_lin_h_2d = jnp.atleast_2d(Pmm_lin_h)
     Pcb_lin_h_2d = jnp.atleast_2d(Pcb_lin_h)
     if nM is None:
-        nM = int(math.ceil(256 * accuracy))
+        nM = 128
+
 
     # Solve non-linear HMCode2020 natively in JAX (JIT friendly)
     Pmm_jax_h = hmcode_pmm_jax(

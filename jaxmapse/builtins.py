@@ -26,7 +26,7 @@ def postprocessing_identity(input_params: Array, output: Array, D: Array, emu) -
     return output
 
 
-def preprocessing_linear_pk_mnuw0wacdm(params: Array) -> Array:
+def preprocessing_drop_primordial_parameters(params: Array) -> Array:
     """Preprocess ``mnuw0wacdm`` linear-P(k) parameters.
 
     Input order is ``[ln10As, ns, H0, ombh2, omch2, Mnu, w0, wa]``.
@@ -35,24 +35,11 @@ def preprocessing_linear_pk_mnuw0wacdm(params: Array) -> Array:
     return params[2:]
 
 
-def postprocessing_linear_pk_mnuw0wacdm_sym_ratio(
-    params: Array, output: Array, D: Array, emu
-) -> Array:
-    """Postprocess ``mnuw0wacdm`` sym-ratio linear-P(k) outputs.
-
-    Applies the primordial spectrum, growth-factor scaling, and the analytic
-    ``DIFF**2`` correction used by the matching MAPSE artifacts.
-    """
-    ln10As = params[0]
-    ns = params[1]
-    As = jnp.exp(ln10As) * 1e-10
-
+def lcdm_transfer_function(params: Array, k: Array) -> Array:
+    """Analytic LCDM transfer-function baseline for ``lcdm_transfer_ratio``."""
     omega_b = params[3]
     omega_c = params[4]
     m_nu = params[5]
-
-    k = emu.k_grid
-    p_prim = primordial_Pk(As, ns, k)
 
     log10_k = jnp.log10(k)
     omega_nu = m_nu / 93.14
@@ -72,7 +59,7 @@ def postprocessing_linear_pk_mnuw0wacdm_sym_ratio(
         / (delta_omega**0.7767030041348179)
     )
 
-    diff = jnp.exp(
+    return jnp.exp(
         0.4971733969600907
         + (
             -24.849067935704547
@@ -80,17 +67,34 @@ def postprocessing_linear_pk_mnuw0wacdm_sym_ratio(
         )
     )
 
-    return (output * diff**2) * (D**2) * p_prim
+
+def postprocessing_lcdm_transfer_ratio(
+    params: Array, output: Array, D: Array, emu
+) -> Array:
+    """Postprocess ``mnuw0wacdm`` sym-ratio linear-P(k) outputs.
+
+    Applies the primordial spectrum, growth-factor scaling, and the analytic
+    ``DIFF**2`` correction used by the matching MAPSE artifacts.
+    """
+    ln10As = params[0]
+    ns = params[1]
+    As = jnp.exp(ln10As) * 1e-10
+
+    k = emu.k_grid
+    p_prim = primordial_Pk(As, ns, k)
+    transfer = lcdm_transfer_function(params, k)
+
+    return (output * transfer**2) * (D**2) * p_prim
 
 
 BUILTIN_PREPROCESSING: Dict[str, Callable] = {
     "identity": preprocessing_identity,
-    "linear_pk_mnuw0wacdm": preprocessing_linear_pk_mnuw0wacdm,
+    "drop_primordial_parameters": preprocessing_drop_primordial_parameters,
 }
 
 BUILTIN_POSTPROCESSING: Dict[str, Callable] = {
     "identity": postprocessing_identity,
-    "linear_pk_mnuw0wacdm_sym_ratio": postprocessing_linear_pk_mnuw0wacdm_sym_ratio,
+    "lcdm_transfer_ratio": postprocessing_lcdm_transfer_ratio,
 }
 
 LOAD_PRESETS = {
@@ -98,9 +102,4 @@ LOAD_PRESETS = {
         "preprocessing_name": "identity",
         "postprocessing_name": "identity",
     },
-    "mnuw0wacdm_linear": {
-        "preprocessing_name": "linear_pk_mnuw0wacdm",
-        "postprocessing_name": "linear_pk_mnuw0wacdm_sym_ratio",
-    },
 }
-

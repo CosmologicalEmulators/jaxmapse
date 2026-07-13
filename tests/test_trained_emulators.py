@@ -19,8 +19,8 @@ def emulator_setup():
 
     try:
         root = jaxmapse.artifact_path(jaxmapse.DEFAULT_EMULATOR_ARTIFACT)
-        pmm = jaxmapse.load_emulator(str(root / "Pk_lin_mm"), preset="mnuw0wacdm_linear")
-        pcb = jaxmapse.load_emulator(str(root / "Pk_lin_cb"), preset="mnuw0wacdm_linear")
+        pmm = jaxmapse.load_emulator(str(root / "Pk_lin_mm"))
+        pcb = jaxmapse.load_emulator(str(root / "Pk_lin_cb"))
     except Exception as e:
         pytest.fail(f"Failed to load emulator: {e}")
 
@@ -128,8 +128,8 @@ def default_emulator():
     name = jaxmapse.DEFAULT_EMULATOR_ARTIFACT
     try:
         root = jaxmapse.artifact_path(name)
-        pmm = jaxmapse.load_emulator(str(root / "Pk_lin_mm"), preset="mnuw0wacdm_linear")
-        pcb = jaxmapse.load_emulator(str(root / "Pk_lin_cb"), preset="mnuw0wacdm_linear")
+        pmm = jaxmapse.load_emulator(str(root / "Pk_lin_mm"))
+        pcb = jaxmapse.load_emulator(str(root / "Pk_lin_cb"))
     except Exception as e:
         pytest.fail(f"Failed to load default emulator '{name}': {e}")
     return pmm, pcb

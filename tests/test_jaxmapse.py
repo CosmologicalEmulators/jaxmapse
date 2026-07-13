@@ -19,9 +19,9 @@ from jaxmapse import (
     LOAD_PRESETS,
     TransferFunctionEmulator,
     postprocessing_identity,
-    postprocessing_linear_pk_mnuw0wacdm_sym_ratio,
+    postprocessing_lcdm_transfer_ratio,
     preprocessing_identity,
-    preprocessing_linear_pk_mnuw0wacdm,
+    preprocessing_drop_primordial_parameters,
 )
 from jaxmapse import jaxmapse as core
 
@@ -135,16 +135,15 @@ def test_builtin_preprocessing_and_postprocessing_registries():
     params = jnp.arange(8.0)
 
     assert BUILTIN_PREPROCESSING["identity"] is preprocessing_identity
-    assert BUILTIN_PREPROCESSING["linear_pk_mnuw0wacdm"] is preprocessing_linear_pk_mnuw0wacdm
+    assert BUILTIN_PREPROCESSING["drop_primordial_parameters"] is preprocessing_drop_primordial_parameters
     assert BUILTIN_POSTPROCESSING["identity"] is postprocessing_identity
     assert (
-        BUILTIN_POSTPROCESSING["linear_pk_mnuw0wacdm_sym_ratio"]
-        is postprocessing_linear_pk_mnuw0wacdm_sym_ratio
+        BUILTIN_POSTPROCESSING["lcdm_transfer_ratio"]
+        is postprocessing_lcdm_transfer_ratio
     )
-    assert LOAD_PRESETS["mnuw0wacdm_linear"]["preprocessing_name"] == "linear_pk_mnuw0wacdm"
 
     assert jnp.allclose(preprocessing_identity(params), params)
-    assert jnp.allclose(preprocessing_linear_pk_mnuw0wacdm(params), params[2:])
+    assert jnp.allclose(preprocessing_drop_primordial_parameters(params), params[2:])
     assert jnp.allclose(postprocessing_identity(params, params + 1.0, None, None), params + 1.0)
 
 
@@ -179,9 +178,9 @@ def test_load_component_function_uses_named_builtins_and_legacy_files(tmp_path):
             "preprocessing.py",
             BUILTIN_PREPROCESSING,
             "preprocessing",
-            explicit_name="linear_pk_mnuw0wacdm",
+            explicit_name="drop_primordial_parameters",
         )
-        is preprocessing_linear_pk_mnuw0wacdm
+        is preprocessing_drop_primordial_parameters
     )
 
     with pytest.raises(ValueError, match="not registered"):
@@ -247,8 +246,8 @@ def test_load_trained_emulators_returns_cached_component_dict(monkeypatch):
     assert trained[DEFAULT_EMULATOR_ARTIFACT]["pcb"].name == "Pk_lin_cb"
     assert calls == [
         ("artifact_path", DEFAULT_EMULATOR_ARTIFACT),
-        ("load_emulator", "Pk_lin_mm", "mnuw0wacdm_linear"),
-        ("load_emulator", "Pk_lin_cb", "mnuw0wacdm_linear"),
+        ("load_emulator", "Pk_lin_mm", None),
+        ("load_emulator", "Pk_lin_cb", None),
     ]
 
     # Cached path: no additional loads
@@ -264,13 +263,13 @@ def test_default_artifact_metadata():
     assert DEFAULT_EMULATOR_ARTIFACT == "mnuw0wacdm_class"
     artifact = data[DEFAULT_EMULATOR_ARTIFACT]
 
-    assert artifact["git-tree-sha1"] == "c1a93f08faafd81f6c62ac3ee97bb9fe37f8cf2e"
+    assert artifact["git-tree-sha1"] == "38a05969d61632358bf4981957f397e45f88107f"
     assert artifact["download"][0]["url"] == (
-        "https://zenodo.org/records/20646263/files/"
+        "https://zenodo.org/records/21328528/files/"
         "trained_mapse_mnuw0wacdm_sym_ratio_pca_1em6_250000.tar.xz?download=1"
     )
     assert artifact["download"][0]["sha256"] == (
-        "1624999b2ae943a8820927cac1eafede033f6b77b3c166ce88a6cf109361c594"
+        "98026354432f50e450a2294a5ad3d89b9cd40746d8b52208495d4d25f4ecbd33"
     )
 
 
