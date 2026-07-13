@@ -8,6 +8,14 @@
 
 ::: jaxmapse.halofit
 
+## HMCode
+
+::: jaxmapse.hmcode
+
+## Builtin preprocessing and postprocessing
+
+::: jaxmapse.builtins
+
 ## Primordial spectra
 
 ::: jaxmapse.primordial

@@ -12,14 +12,13 @@ fixed input shapes and static ``nM``/feedback choices.
 from __future__ import annotations
 
 from functools import partial
+import math
 from typing import NamedTuple, Optional
 
 import jax
 import jax.numpy as jnp
 import numpy as np
 from jaxtyping import Array
-
-jax.config.update("jax_enable_x64", True)
 
 try:
     from jaxace.background import w0waCDMCosmology
@@ -39,10 +38,11 @@ except ImportError:
     pass
 
 RHO_CRITICAL = 2.77536627245708e11  # Msun/h / (Mpc/h)^3
-DV0 = 18.0 * jnp.pi**2
-DC0 = (3.0 / 20.0) * (12.0 * jnp.pi) ** (2.0 / 3.0)
+DV0 = 18.0 * math.pi**2
+DC0 = (3.0 / 20.0) * (12.0 * math.pi) ** (2.0 / 3.0)
 ND_HMCODE = 2.853
 ST_A = 0.2161599867112559
+LOG_GRID_RTOL = 1.0e-10
 
 
 class HMCodeCosmology(NamedTuple):
@@ -140,6 +140,12 @@ def _validate_inputs(z, k_out, k_support, pk_mm, pk_cb):
         raise ValueError("HMCode k grids must be strictly positive.")
     if np.any(np.diff(k_support) <= 0.0) or np.any(np.diff(k_out) <= 0.0):
         raise ValueError("HMCode k grids must be sorted in ascending order.")
+    dlnk = np.diff(np.log(k_support))
+    if not np.allclose(dlnk, dlnk[0], rtol=LOG_GRID_RTOL, atol=0.0):
+        raise ValueError(
+            "HMCode k_support must be uniformly spaced in log(k) "
+            f"(relative tolerance {LOG_GRID_RTOL:g})."
+        )
     if k_out[0] < k_support[0] or k_out[-1] > k_support[-1]:
         raise ValueError("output k range must lie inside the support k range.")
     expected = (len(z), len(k_support))
@@ -165,9 +171,9 @@ def _hmcode_mass_steps(nM):
     return int(nM)
 
 
-def _trapz(y, x, axis=-1):
-    dx = jnp.diff(x)
-    return jnp.sum(0.5 * dx * (jnp.take(y, jnp.arange(1, y.shape[axis]), axis=axis) + jnp.take(y, jnp.arange(0, y.shape[axis] - 1), axis=axis)), axis=axis)
+def _trapz(y, x):
+    """Trapezoidal integral along the final axis."""
+    return jnp.sum(0.5 * jnp.diff(x) * (y[..., 1:] + y[..., :-1]), axis=-1)
 
 
 def _loglog_interp(logx, logy, x):
@@ -359,14 +365,14 @@ def _sigma_grid_jax(k_support, pk_cb_zk, r_grid):
         * W[None, :, :] ** 2
         / (2.0 * jnp.pi**2)
     )
-    sigma2 = _trapz(integrand, logk, axis=-1)
+    sigma2 = _trapz(integrand, logk)
     return jnp.sqrt(jnp.maximum(sigma2, 0.0))
 
 
 def _sigma_v_jax(k_support, pk_mm_zk):
     logk = jnp.log(k_support)
     integrand = pk_mm_zk * k_support[None, :]
-    sigma2 = _trapz(integrand, logk, axis=-1) / (2.0 * jnp.pi**2)
+    sigma2 = _trapz(integrand, logk) / (2.0 * jnp.pi**2)
     return jnp.sqrt(jnp.maximum(sigma2, 0.0)) / jnp.sqrt(3.0)
 
 
@@ -753,6 +759,10 @@ def hmcode_pmm(
     output is ``(len(z), len(k))``. If ``k_support`` is omitted, ``k`` is used as
     both support and output grid. ``pk_cb_z``/``pk_cb_support_z`` supplies the
     cold+baryon linear spectrum used for HMCode internal σ(R) quantities.
+
+    ``k_support`` must be uniformly spaced in ``log(k)`` because HMCode's BAO
+    smoothing uses a single log-grid spacing. ``k`` may be any strictly
+    increasing output grid contained within the support range.
     """
     cosmo = _normalize_cosmo(cosmo)
     scalar_z = np.asarray(z).ndim == 0

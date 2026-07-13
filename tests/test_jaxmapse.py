@@ -218,6 +218,57 @@ def test_load_emulator_strict_composite_validation(tmp_path):
         core.load_emulator(str(tmp_path))
 
 
+def test_component_shape_validation_matches_mapse_jl_contract():
+    metadata = {"n_input_features": 3, "n_output_features": 2}
+    k = jnp.array([0.1, 0.2, 0.3])
+    in_minmax = jnp.zeros((3, 2))
+    out_minmax = jnp.zeros((2, 2))
+    pca_mean = jnp.zeros(3)
+    pca_projection = jnp.zeros((3, 2))
+
+    core._validate_component_shapes(
+        "artifact", k, in_minmax, out_minmax, pca_mean, pca_projection, metadata
+    )
+
+    with pytest.raises(ValueError, match="inminmax.npy has shape"):
+        core._validate_component_shapes(
+            "artifact", k, jnp.zeros((2, 2)), out_minmax, pca_mean, pca_projection, metadata
+        )
+    with pytest.raises(ValueError, match="outminmax.npy has shape"):
+        core._validate_component_shapes(
+            "artifact", k, in_minmax, jnp.zeros((3, 2)), pca_mean, pca_projection, metadata
+        )
+    with pytest.raises(ValueError, match="pca_mean.npy has shape"):
+        core._validate_component_shapes(
+            "artifact", k, in_minmax, out_minmax, jnp.zeros(2), pca_projection, metadata
+        )
+    with pytest.raises(ValueError, match="PCA projection has shape"):
+        core._validate_component_shapes(
+            "artifact", k, in_minmax, out_minmax, pca_mean, jnp.zeros((2, 3)), metadata
+        )
+
+
+def test_parse_params_converts_as_and_rejects_ambiguous_loga():
+    params = {
+        "ln10As": 3.044,
+        "ns": 0.9649,
+        "H0": 67.36,
+        "omega_b": 0.02237,
+        "omega_c": 0.12,
+        "Mnu": 0.06,
+        "w0": -1.0,
+        "wa": 0.0,
+    }
+    from_ln10as = core._parse_params(params, {})
+    from_as = core._parse_params(
+        {**params, "A_s": jnp.exp(params["ln10As"]) * 1.0e-10, "ln10As": None}, {}
+    )
+    assert jnp.allclose(from_ln10as, from_as, rtol=1.0e-12, atol=1.0e-12)
+
+    with pytest.raises(ValueError, match="logA is ambiguous"):
+        core._parse_params({**params, "ln10As": None, "logA": 3.044}, {})
+
+
 
 def test_load_trained_emulators_returns_cached_component_dict(monkeypatch):
     calls = []
@@ -291,11 +342,17 @@ def test_interp_to_grid_validation():
     assert res.shape == (2,)
 
     # Non-monotonic grids
-    with pytest.raises(ValueError, match="source_k must be monotonically increasing"):
+    with pytest.raises(ValueError, match="source_k must be strictly increasing"):
         core._interp_to_grid(jnp.array([1.0, 0.5]), values[:2], target_k)
 
-    with pytest.raises(ValueError, match="target_k must be monotonically increasing"):
+    with pytest.raises(ValueError, match="source_k must be strictly increasing"):
+        core._interp_to_grid(jnp.array([0.1, 0.5, 0.4]), values, target_k)
+
+    with pytest.raises(ValueError, match="target_k must be strictly increasing"):
         core._interp_to_grid(source_k, values, jnp.array([0.8, 0.2]))
+
+    with pytest.raises(ValueError, match="target_k must be strictly increasing"):
+        core._interp_to_grid(source_k, values, jnp.array([0.2, 0.8, 0.7]))
 
     # Target out of bounds
     with pytest.raises(ValueError, match="Target grid out of bounds"):

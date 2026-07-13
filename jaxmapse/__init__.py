@@ -1,8 +1,3 @@
-import os
-import warnings
-from typing import Dict, Optional
-
-from fetch_artifacts import load_artifacts
 from jaxace.background import (
     D_f_z,
     D_z,
@@ -125,4 +120,3 @@ __all__ = [
     "dA_z",
     "dL_z",
 ]
-

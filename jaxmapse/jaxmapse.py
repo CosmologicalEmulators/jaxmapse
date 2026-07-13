@@ -7,6 +7,7 @@ from typing import Callable, Mapping, Optional, Type, Union
 
 import jax
 import jax.numpy as jnp
+import numpy as np
 
 # Import jaxace components
 from jaxace import FlaxEmulator, init_emulator, inv_maximin, maximin
@@ -36,22 +37,25 @@ def _interp_to_grid(source_k: Array, values: Array, target_k: Array) -> Array:
     target_k = jnp.asarray(target_k)
     values = jnp.asarray(values)
 
-    # Perform validation if the grids are concrete (not JAX tracers)
+    # Validate only concrete host grids. The traced kernel assumes immutable,
+    # previously validated emulator grids.
     try:
-        if len(source_k) > 0 and len(target_k) > 0:
-            # Test if the inputs are concrete. This raises TracerBoolConversionError if tracing.
-            bool(source_k[0] < target_k[0])
-
-            if len(source_k) > 1 and source_k[1] < source_k[0]:
-                raise ValueError("source_k must be monotonically increasing.")
-            if len(target_k) > 1 and target_k[1] < target_k[0]:
-                raise ValueError("target_k must be monotonically increasing.")
-            if target_k[0] < source_k[0] or target_k[-1] > source_k[-1]:
+        source_host = np.asarray(source_k)
+        target_host = np.asarray(target_k)
+        if source_host.ndim != 1 or target_host.ndim != 1:
+            raise ValueError("source_k and target_k must be one-dimensional.")
+        if source_host.size == 0 or target_host.size == 0:
+            raise ValueError("source_k and target_k must be non-empty.")
+        if np.any(np.diff(source_host) <= 0.0):
+            raise ValueError("source_k must be strictly increasing.")
+        if np.any(np.diff(target_host) <= 0.0):
+            raise ValueError("target_k must be strictly increasing.")
+        if target_host[0] < source_host[0] or target_host[-1] > source_host[-1]:
                 raise ValueError(
-                    f"Target grid out of bounds: [{target_k[0]}, {target_k[-1]}] "
-                    f"is outside source grid range [{source_k[0]}, {source_k[-1]}]."
+                    f"Target grid out of bounds: [{target_host[0]}, {target_host[-1]}] "
+                    f"is outside source grid range [{source_host[0]}, {source_host[-1]}]."
                 )
-    except jax.errors.TracerBoolConversionError:
+    except jax.errors.TracerArrayConversionError:
         pass
 
     if values.ndim == 1:
@@ -61,7 +65,11 @@ def _interp_to_grid(source_k: Array, values: Array, target_k: Array) -> Array:
 
 class TransferFunctionEmulator:
     """
-    TransferFunctionEmulator class representing a single cosmological transfer function or linear P(k) component.
+    Single cosmological transfer-function or linear-P(k) component.
+
+    Instances are immutable after their first prediction. ``predict`` caches a
+    JIT executable with ``self`` static, so changing model, normalization, PCA,
+    or function attributes after that call can serve stale compiled state.
     """
     def __init__(
         self,
@@ -207,7 +215,7 @@ get_halofit_pmm = halofit_pmm_from_emulator
 
 
 def _load_function(filepath: str, func_name: str) -> Callable:
-    """Helper to load a function from a python file."""
+    """Load a legacy artifact-local hook from trusted executable Python code."""
     if not os.path.exists(filepath):
         raise FileNotFoundError(f"Python file not found: {filepath}")
     spec = importlib.util.spec_from_file_location("module.name", filepath)
@@ -272,6 +280,64 @@ def _load_preset(preset):
     raise ValueError(f"Unknown jaxmapse load preset {name!r}. Available presets: {available}")
 
 
+def _validate_component_shapes(
+    path: str,
+    k_grid: Array,
+    in_minmax: Array,
+    out_minmax: Array,
+    pca_mean: Optional[Array],
+    pca_projection: Optional[Array],
+    nn_dict: Mapping,
+) -> None:
+    """Validate artifact arrays before constructing an emulator.
+
+    This mirrors Mapse.jl's loader checks so malformed artifacts fail at the
+    boundary with an actionable error, rather than later inside normalization or
+    PCA reconstruction under JIT.
+    """
+    try:
+        n_input = int(nn_dict["n_input_features"])
+        n_output = int(nn_dict["n_output_features"])
+    except KeyError as exc:
+        raise ValueError(f"{path}: nn_setup.json is missing {exc.args[0]!r}.") from exc
+
+    if tuple(in_minmax.shape) != (n_input, 2):
+        raise ValueError(
+            f"{path}: inminmax.npy has shape {tuple(in_minmax.shape)}; "
+            f"expected ({n_input}, 2)."
+        )
+    if tuple(out_minmax.shape) != (n_output, 2):
+        raise ValueError(
+            f"{path}: outminmax.npy has shape {tuple(out_minmax.shape)}; "
+            f"expected ({n_output}, 2)."
+        )
+    if len(k_grid.shape) != 1:
+        raise ValueError(f"{path}: k.npy must be one-dimensional.")
+
+    if pca_mean is None:
+        if pca_projection is not None:
+            raise ValueError(f"{path}: PCA projection requires pca_mean.npy.")
+        if k_grid.shape[0] != n_output:
+            raise ValueError(
+                f"{path}: k-grid has length {k_grid.shape[0]} but uncompressed "
+                f"NN output has {n_output} features."
+            )
+        return
+
+    if pca_projection is None:
+        raise ValueError(f"{path}: pca_mean.npy requires PCA projection metadata.")
+    if pca_mean.ndim != 1 or pca_mean.shape[0] != k_grid.shape[0]:
+        raise ValueError(
+            f"{path}: pca_mean.npy has shape {tuple(pca_mean.shape)}; expected "
+            f"({k_grid.shape[0]},)."
+        )
+    if tuple(pca_projection.shape) != (k_grid.shape[0], n_output):
+        raise ValueError(
+            f"{path}: PCA projection has shape {tuple(pca_projection.shape)}; "
+            f"expected ({k_grid.shape[0]}, {n_output})."
+        )
+
+
 def load_emulator(
     path: str,
     structure: Type[TransferFunctionEmulator] = TransferFunctionEmulator,
@@ -326,6 +392,16 @@ def load_emulator(
         )
     pca_mean = jnp.load(pca_mean_file) if has_pca else None
     pca_projection = jnp.load(pca_projection_file) if has_pca else None
+
+    _validate_component_shapes(
+        path,
+        k_grid,
+        in_minmax,
+        out_minmax,
+        pca_mean,
+        pca_projection,
+        nn_dict,
+    )
 
     trained_emu = init_emulator(nn_dict, weights)
 
@@ -452,9 +528,14 @@ def _parse_params(params, kwargs):
             
     p_dict.update(kwargs)
     
-    ln10As = p_dict.get('ln10As', p_dict.get('logA', p_dict.get('A_s', None)))
-    if ln10As is None:
-        raise ValueError('Missing parameter ln10As')
+    if p_dict.get("ln10As") is not None:
+        ln10As = p_dict["ln10As"]
+    elif p_dict.get("A_s") is not None:
+        ln10As = jnp.log(1.0e10 * p_dict["A_s"])
+    elif p_dict.get("logA") is not None:
+        raise ValueError("logA is ambiguous; pass ln10As or A_s explicitly.")
+    else:
+        raise ValueError("Missing parameter ln10As or A_s.")
     ns = p_dict.get('ns', p_dict.get('n_s', None))
     if ns is None:
         raise ValueError('Missing parameter ns')
@@ -508,7 +589,8 @@ def hmcode_pmm_from_emulator(
     linear_pcb_emu: TransferFunctionEmulator, optional
         The linear cb (baryons + CDM) power spectrum emulator. If None, loads the default built-in emulator.
     T_AGN: float, optional
-        Baryon feedback temperature log10(T_AGN/K). If None, uses Dark Matter Only (DMO).
+        Baryon feedback temperature in Kelvin. The conventional feedback value
+        is ``10.0**7.8`` K. If None, uses Dark Matter Only (DMO).
     nM: int, optional
         Number of mass integration steps (default: 128).
     k_out: Array, optional
@@ -635,4 +717,3 @@ def hmcode_pmm_from_emulator(
 
 
 get_hmcode_pmm = hmcode_pmm_from_emulator
-

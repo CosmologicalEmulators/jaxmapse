@@ -47,6 +47,53 @@ def _reference_case():
     )
 
 
+def _curved_parity_case():
+    data = np.loadtxt(Path(__file__).parent / "data" / "hmcode_curved_parity_reference.txt")
+    z_values = np.unique(data[:, 0])
+    k_values = data[data[:, 0] == z_values[0], 1]
+    pmm_zk = np.stack([data[data[:, 0] == z, 2] for z in z_values])
+    pcb_zk = np.stack([data[data[:, 0] == z, 3] for z in z_values])
+    dmo_zk = np.stack([data[data[:, 0] == z, 4] for z in z_values])
+    feedback_zk = np.stack([data[data[:, 0] == z, 5] for z in z_values])
+
+    h = 0.6736
+    omega_b = 0.02237 / h**2
+    omega_nu = 0.06 / (93.14 * h**2)
+    omega_m = omega_b + 0.12 / h**2 + omega_nu
+    cosmo = HMCodeCosmology(
+        Omega_m=omega_m,
+        Omega_b=omega_b,
+        h=h,
+        n_s=0.9649,
+        sigma_8=0.8109118,
+        w0=-0.9,
+        wa=0.2,
+        Omega_nu=omega_nu,
+        Omega_k=0.01,
+    )
+    return (
+        cosmo,
+        jnp.asarray(z_values),
+        jnp.asarray(k_values),
+        jnp.asarray(pmm_zk),
+        jnp.asarray(pcb_zk),
+        jnp.asarray(dmo_zk),
+        jnp.asarray(feedback_zk),
+    )
+
+
+def test_hmcode_curved_neutrino_parity_fixture_matches_native_julia():
+    cosmo, z, k, pmm_zk, pcb_zk, dmo_reference, feedback_reference = _curved_parity_case()
+
+    dmo = hmcode_pmm(cosmo, z, k, pmm_zk, pcb_zk, T_AGN=None, nM=32)
+    feedback = hmcode_pmm(cosmo, z, k, pmm_zk, pcb_zk, T_AGN=10.0**7.8, nM=32)
+
+    # Native Julia uses adaptive root finding/integration while JAX uses fixed
+    # compiled grids, so this deliberately has a looser cross-backend tolerance.
+    assert jnp.allclose(dmo, dmo_reference, rtol=1.5e-2, atol=0.0)
+    assert jnp.allclose(feedback, feedback_reference, rtol=1.5e-2, atol=0.0)
+
+
 def test_hmcode_boost_matches_camb_reference_table():
     cosmo, z, k, pk_mm_zk, pk_cb_zk, _, boost_ref_zk = _reference_case()
 
@@ -179,6 +226,10 @@ def test_hmcode_rejects_invalid_inputs_like_mapse_jl():
 
     with pytest.raises(ValueError, match="sorted in ascending order"):
         hmcode_pmm(cosmo, z, k[::-1], pk_mm_zk)
+
+    irregular_k = k.at[10].set(0.5 * (k[9] + k[10]))
+    with pytest.raises(ValueError, match="uniformly spaced in log"):
+        hmcode_pmm(cosmo, z, irregular_k, pk_mm_zk)
 
     with pytest.raises(ValueError, match="pk_mm_z must have shape"):
         hmcode_pmm(cosmo, jnp.array([0.0, 1.0]), k, pk_mm_zk[:1])
