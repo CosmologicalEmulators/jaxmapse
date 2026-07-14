@@ -717,3 +717,133 @@ def hmcode_pmm_from_emulator(
 
 
 get_hmcode_pmm = hmcode_pmm_from_emulator
+
+
+def hmcode_pmm_from_emulator_fast(
+    input_params: Optional[Union[Array, dict]] = None,
+    z: Optional[Union[float, Array]] = None,
+    z_coarse: Optional[Array] = None,
+    z_fine: Optional[Union[float, Array]] = None,
+    N_z_coarse: int = 50,
+    D: Optional[Union[float, Array]] = None,
+    linear_pmm_emu: Optional[TransferFunctionEmulator] = None,
+    linear_pcb_emu: Optional[TransferFunctionEmulator] = None,
+    T_AGN: Optional[float] = None,
+    nM: int = 128,
+    k_out: Optional[Array] = None,
+    **kwargs,
+) -> tuple[Array, Array]:
+    """
+    Fast end-to-end evaluation of the non-linear matter power spectrum on redshift grid `z`
+    (or target grid `z_fine`) by running the core pipeline on a coarse grid (either custom
+    `z_coarse` or auto-generated with `N_z_coarse` nodes) and interpolating the non-linear
+    results via Akima splines.
+
+    Warning:
+        This fast API is an approximation. Instead of evaluating the full non-linear
+        HMCode equations on the high-fidelity `z` (or `z_fine`) grid, it solves HMCode
+        on the coarse grid (either `z_coarse` or `N_z_coarse` linearly spaced nodes) and
+        uses Akima splines to reconstruct the results.
+        
+        - Typical Errors: Redshift interpolation errors are generally small but largest
+          at high k, high redshift, and in regions where the nonlinear boost factor
+          evolves rapidly.
+        - Recommended Coarse Grid Size:
+            - `N_z_coarse = 10` is NOT precision-safe and can introduce percent-level artifacts.
+            - `N_z_coarse = 50` is a reasonable compromise between speed and accuracy.
+            - `N_z_coarse = 100` is safer, typically guaranteeing sub-percent worst-case
+              accuracy compared to full direct evaluation in studied regimes.
+        - Validation: Users are advised to validate the accuracy of this fast
+          path against the direct `hmcode_pmm_from_emulator` function for their specific
+          redshift and k ranges.
+
+    Preferred Production Pattern:
+        Using this smart/coarse-grid API is the preferred production pattern:
+        - Provide custom `z_coarse` and `z_fine` manually.
+        - This allows linear emulators and HMCode to execute exclusively on the coarse
+          redshift grid, and only the final non-linear spectrum is reconstructed on `z_fine`.
+        - This avoids running the linear/transfer emulators on the dense fine redshift grid.
+    """
+    from jaxace.utils import akima_interpolation
+
+    if N_z_coarse < 5:
+        raise ValueError("N_z_coarse must be at least 5 for Akima interpolation.")
+
+    if z_coarse is None:
+        if z is None:
+            raise ValueError("Either z or z_coarse must be provided.")
+        z_arr = jnp.atleast_1d(z)
+
+        # If the redshift grid is small, evaluate directly without interpolation
+        if z_arr.shape[0] <= N_z_coarse or z_arr.shape[0] < 5:
+            return hmcode_pmm_from_emulator(
+                input_params=input_params,
+                z=z,
+                D=D,
+                linear_pmm_emu=linear_pmm_emu,
+                linear_pcb_emu=linear_pcb_emu,
+                T_AGN=T_AGN,
+                nM=nM,
+                k_out=k_out,
+                **kwargs,
+            )
+
+        if D is not None:
+            raise ValueError("Growth factor D is not supported on the fast/interpolated path. Please use direct evaluation or pass D=None.")
+
+        # Generate coarse redshift grid
+        z_min, z_max = jnp.min(z_arr), jnp.max(z_arr)
+        _z_coarse = jnp.linspace(z_min, z_max, N_z_coarse)
+        _z_fine = z_arr
+        is_scalar = jnp.ndim(z) == 0
+    else:
+        if z_fine is None:
+            raise ValueError("z_fine must be provided if z_coarse is specified.")
+        if D is not None:
+            raise ValueError("Growth factor D is not supported on the fast/interpolated path. Please use direct evaluation or pass D=None.")
+        _z_coarse = z_coarse
+        _z_fine = jnp.atleast_1d(z_fine)
+        is_scalar = jnp.ndim(z_fine) == 0
+
+    # Redshift validation checks for concrete inputs
+    if not isinstance(_z_coarse, jax.core.Tracer):
+        z_c_np = np.asarray(_z_coarse)
+        if len(z_c_np) < 5:
+            raise ValueError("z_coarse must have at least 5 points for Akima interpolation.")
+        if np.any(np.diff(z_c_np) <= 0.0):
+            raise ValueError("z_coarse must be strictly increasing.")
+
+    if not isinstance(_z_fine, jax.core.Tracer):
+        z_f_np = np.asarray(_z_fine)
+        if len(z_f_np) > 1 and np.any(np.diff(z_f_np) <= 0.0):
+            raise ValueError("z_fine must be strictly increasing.")
+        if not isinstance(_z_coarse, jax.core.Tracer):
+            z_c_np = np.asarray(_z_coarse)
+            if np.any(z_f_np < z_c_np[0]) or np.any(z_f_np > z_c_np[-1]):
+                raise ValueError("z_fine must lie within the range of z_coarse.")
+
+    # Evaluate coarse non-linear power spectrum
+    # (Note: growth factor D is automatically re-evaluated internally on _z_coarse)
+    k, pk_nl_coarse = hmcode_pmm_from_emulator(
+        input_params=input_params,
+        z=_z_coarse,
+        D=None,
+        linear_pmm_emu=linear_pmm_emu,
+        linear_pcb_emu=linear_pcb_emu,
+        T_AGN=T_AGN,
+        nM=nM,
+        k_out=k_out,
+        **kwargs,
+    )
+
+    # Akima interpolate back to the fine z grid
+    pk_nl_fine = akima_interpolation(pk_nl_coarse, _z_coarse, _z_fine)
+
+    # Restore original scalar/vector shape
+    pk_nl = pk_nl_fine[0] if is_scalar else pk_nl_fine
+
+    return k, pk_nl
+
+
+get_hmcode_pmm_fast = hmcode_pmm_from_emulator_fast
+

@@ -54,6 +54,8 @@ from .hmcode import (
     hmcode_Pmm_jax,
     hmcode_pmm,
     hmcode_pmm_jax,
+    hmcode_pmm_fast,
+    hmcode_boost_fast,
 )
 from .jaxmapse import (
     DEFAULT_EMULATOR_ARTIFACT,
@@ -66,6 +68,8 @@ from .jaxmapse import (
     get_halofit_pmm,
     hmcode_pmm_from_emulator,
     get_hmcode_pmm,
+    hmcode_pmm_from_emulator_fast,
+    get_hmcode_pmm_fast,
 )
 from .primordial import primordial_Pk
 
@@ -90,6 +94,8 @@ __all__ = [
     "get_halofit_pmm",
     "hmcode_pmm_from_emulator",
     "get_hmcode_pmm",
+    "hmcode_pmm_from_emulator_fast",
+    "get_hmcode_pmm_fast",
     "halofit_background",
     "halofit_cosmology",
     "halofit_pmm",
@@ -101,6 +107,8 @@ __all__ = [
     "hmcode_Pmm",
     "hmcode_Pmm_jax",
     "hmcode_boost",
+    "hmcode_pmm_fast",
+    "hmcode_boost_fast",
     "postprocessing_identity",
     "postprocessing_lcdm_transfer_ratio",
     "primordial_Pk",

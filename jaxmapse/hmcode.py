@@ -822,3 +822,218 @@ def hmcode_boost(
 
 hmcode_Pmm = hmcode_pmm
 hmcode_Pmm_jax = hmcode_pmm_jax
+
+
+def _validate_concrete_z(z_coarse: Array, z_fine: Array):
+    # Enforce minimum size on coarse grid (Akima needs >= 5 points)
+    if len(z_coarse) < 5:
+        raise ValueError("z_coarse must have at least 5 points for Akima interpolation.")
+
+    # Validate concrete (non-traced) values
+    if not isinstance(z_coarse, jax.core.Tracer):
+        z_c_np = np.asarray(z_coarse)
+        if np.any(np.diff(z_c_np) <= 0.0):
+            raise ValueError("z_coarse must be strictly increasing.")
+            
+    if not isinstance(z_fine, jax.core.Tracer):
+        z_f_np = np.atleast_1d(np.asarray(z_fine))
+        if len(z_f_np) > 1 and np.any(np.diff(z_f_np) <= 0.0):
+            raise ValueError("z_fine must be strictly increasing.")
+        # Check that fine grid lies within the coarse grid range
+        z_c_np = np.asarray(z_coarse)
+        if np.any(z_f_np < z_c_np[0]) or np.any(z_f_np > z_c_np[-1]):
+            raise ValueError("z_fine must lie within the range of z_coarse.")
+
+
+def hmcode_pmm_fast(
+    cosmo: HMCodeCosmology,
+    z_coarse: Array,
+    z_fine: Array,
+    k: Array,
+    pk_mm_coarse: Array,
+    pk_cb_coarse: Optional[Array] = None,
+    *,
+    k_support: Optional[Array] = None,
+    pk_cb_support_coarse: Optional[Array] = None,
+    T_AGN: Optional[float] = 10.0**7.8,
+    Mmin: float = 1.0,
+    Mmax: float = 1.0e18,
+    nM: int = 128,
+) -> Array:
+    """Compute HMCode2020 nonlinear Pmm using coarse grid and Akima interpolation.
+
+    Evaluates HMCode on z_coarse using the provided pk_mm_coarse, then
+    interpolates the resulting non-linear power spectrum to z_fine.
+
+    Warning:
+        This fast API is an approximation. Instead of evaluating the full non-linear
+        HMCode equations on the high-fidelity `z_fine` grid, it solves HMCode on
+        the coarse grid `z_coarse` and uses Akima splines to reconstruct the results.
+        
+        - Typical Errors: Redshift interpolation errors are generally small but largest
+          at high k, high redshift, and in regions where the nonlinear boost factor
+          evolves rapidly.
+        - Recommended Coarse Grid Size:
+            - `N_z_coarse = 10` is NOT precision-safe and can introduce percent-level artifacts.
+            - `N_z_coarse = 50` is a reasonable speed/accuracy compromise.
+            - `N_z_coarse = 100` is safer, typically guaranteeing sub-percent worst-case
+              accuracy compared to full direct evaluation in studied regimes.
+        - Validation: Users are advised to validate the accuracy of this fast
+          path against the direct `hmcode_pmm` function for their specific redshift and
+          k ranges.
+
+    Preferred Production Pattern:
+        Using this smart/coarse-grid API is the preferred production pattern:
+        1. Choose `z_coarse` (typically 50-100 nodes linearly spaced).
+        2. Evaluate linear transfer functions/emulators only on `z_coarse`.
+        3. Run HMCode via this function on `z_coarse`.
+        4. Akima interpolate the final non-linear spectrum to `z_fine`.
+        This avoids running the linear/transfer emulators on the dense fine redshift grid.
+
+    Interpolation Target Note:
+        `hmcode_pmm_fast` interpolates the full nonlinear power spectrum $P(k,z)$,
+        whereas `hmcode_boost_fast` interpolates the non-linear boost factor $B(k,z)$.
+        Because these interpolation targets differ, they are not numerically equivalent.
+        For workflows where linear theory is smooth and high accuracy on the nonlinear
+        power spectrum is desired, interpolating $P(k,z)$ directly via `hmcode_pmm_fast`
+        is generally recommended.
+    """
+    from jaxace.utils import akima_interpolation
+
+    cosmo = _normalize_cosmo(cosmo)
+    z_coarse = jnp.asarray(z_coarse)
+    z_fine = jnp.asarray(z_fine)
+    k = jnp.asarray(k)
+    k_sup = k if k_support is None else jnp.asarray(k_support)
+    
+    pk_mm = jnp.asarray(pk_mm_coarse)
+    if pk_mm.ndim == 1:
+        pk_mm = pk_mm[None, :]
+        
+    if pk_cb_support_coarse is not None and pk_cb_coarse is not None:
+        raise ValueError("Pass either pk_cb_coarse or pk_cb_support_coarse, not both.")
+    pk_cb = pk_cb_support_coarse if pk_cb_support_coarse is not None else pk_cb_coarse
+    pk_cb = pk_mm if pk_cb is None else jnp.asarray(pk_cb)
+    if pk_cb.ndim == 1:
+        pk_cb = pk_cb[None, :]
+
+    _validate_concrete_z(z_coarse, z_fine)
+    if not (isinstance(z_coarse, jax.core.Tracer) or isinstance(pk_mm, jax.core.Tracer) or isinstance(pk_cb, jax.core.Tracer)):
+        _validate_inputs(np.asarray(z_coarse), np.asarray(k), np.asarray(k_sup), np.asarray(pk_mm), np.asarray(pk_cb))
+
+    nM_eff = _hmcode_mass_steps(nM)
+
+    Pk_nl_coarse = hmcode_pmm_jax(
+        cosmo,
+        z_coarse,
+        k,
+        k_sup,
+        pk_mm,
+        pk_cb,
+        T_AGN=10.0**7.8 if T_AGN is None else float(T_AGN),
+        Mmin=float(Mmin),
+        Mmax=float(Mmax),
+        nM=nM_eff,
+        include_feedback=T_AGN is not None,
+    )
+
+    return akima_interpolation(Pk_nl_coarse, z_coarse, z_fine)
+
+
+def hmcode_boost_fast(
+    cosmo: HMCodeCosmology,
+    z_coarse: Array,
+    z_fine: Array,
+    k: Array,
+    pk_mm_coarse: Array,
+    pk_cb_coarse: Optional[Array] = None,
+    *,
+    k_support: Optional[Array] = None,
+    pk_cb_support_coarse: Optional[Array] = None,
+    T_AGN: Optional[float] = 10.0**7.8,
+    Mmin: float = 1.0,
+    Mmax: float = 1.0e18,
+    nM: int = 128,
+) -> Array:
+    """Compute HMCode2020 nonlinear boost using coarse grid and Akima interpolation.
+
+    Evaluates the boost on z_coarse using the provided pk_mm_coarse, then
+    interpolates the resulting boost factor to z_fine.
+
+    Warning:
+        This fast API is an approximation. Instead of evaluating the full non-linear
+        HMCode equations on the high-fidelity `z_fine` grid, it solves HMCode on
+        the coarse grid `z_coarse` and uses Akima splines to reconstruct the results.
+        
+        - Typical Errors: Redshift interpolation errors are generally small but largest
+          at high k, high redshift, and in regions where the nonlinear boost factor
+          evolves rapidly.
+        - Recommended Coarse Grid Size:
+            - `N_z_coarse = 10` is NOT precision-safe and can introduce percent-level artifacts.
+            - `N_z_coarse = 50` is a reasonable speed/accuracy compromise.
+            - `N_z_coarse = 100` is safer, typically guaranteeing sub-percent worst-case
+              accuracy compared to full direct evaluation in studied regimes.
+        - Validation: Users are advised to validate the accuracy of this fast
+          path against the direct `hmcode_boost` function for their specific redshift and
+          k ranges.
+
+    Preferred Production Pattern:
+        Using this smart/coarse-grid API is the preferred production pattern:
+        1. Choose `z_coarse` (typically 50-100 nodes linearly spaced).
+        2. Evaluate linear transfer functions/emulators only on `z_coarse`.
+        3. Run HMCode via this function on `z_coarse`.
+        4. Akima interpolate the final non-linear spectrum/boost to `z_fine`.
+        This avoids running the linear/transfer emulators on the dense fine redshift grid.
+
+    Interpolation Target Note:
+        `hmcode_pmm_fast` interpolates the full nonlinear power spectrum $P(k,z)$,
+        whereas `hmcode_boost_fast` interpolates the non-linear boost factor $B(k,z)$.
+        Because these interpolation targets differ, they are not numerically equivalent.
+        For workflows where linear theory is smooth and high accuracy on the nonlinear
+        power spectrum is desired, interpolating $P(k,z)$ directly via `hmcode_pmm_fast`
+        is generally recommended.
+    """
+    from jaxace.utils import akima_interpolation
+
+    cosmo = _normalize_cosmo(cosmo)
+    z_coarse = jnp.asarray(z_coarse)
+    z_fine = jnp.asarray(z_fine)
+    k = jnp.asarray(k)
+    k_sup = k if k_support is None else jnp.asarray(k_support)
+    
+    pk_mm = jnp.asarray(pk_mm_coarse)
+    if pk_mm.ndim == 1:
+        pk_mm = pk_mm[None, :]
+        
+    if pk_cb_support_coarse is not None and pk_cb_coarse is not None:
+        raise ValueError("Pass either pk_cb_coarse or pk_cb_support_coarse, not both.")
+    pk_cb = pk_cb_support_coarse if pk_cb_support_coarse is not None else pk_cb_coarse
+    pk_cb = pk_mm if pk_cb is None else jnp.asarray(pk_cb)
+    if pk_cb.ndim == 1:
+        pk_cb = pk_cb[None, :]
+
+    _validate_concrete_z(z_coarse, z_fine)
+    if not (isinstance(z_coarse, jax.core.Tracer) or isinstance(pk_mm, jax.core.Tracer) or isinstance(pk_cb, jax.core.Tracer)):
+        _validate_inputs(np.asarray(z_coarse), np.asarray(k), np.asarray(k_sup), np.asarray(pk_mm), np.asarray(pk_cb))
+
+    nM_eff = _hmcode_mass_steps(nM)
+
+    Pk_nl_coarse = hmcode_pmm_jax(
+        cosmo,
+        z_coarse,
+        k,
+        k_sup,
+        pk_mm,
+        pk_cb,
+        T_AGN=10.0**7.8 if T_AGN is None else float(T_AGN),
+        Mmin=float(Mmin),
+        Mmax=float(Mmax),
+        nM=nM_eff,
+        include_feedback=T_AGN is not None,
+    )
+
+    pk_lin_coarse = _interp_matrix_from_support_jax(k_sup, pk_mm, k)
+    boost_coarse = Pk_nl_coarse / pk_lin_coarse
+
+    return akima_interpolation(boost_coarse, z_coarse, z_fine)
+

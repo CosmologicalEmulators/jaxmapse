@@ -22,6 +22,8 @@ from jaxmapse import (
     postprocessing_lcdm_transfer_ratio,
     preprocessing_identity,
     preprocessing_drop_primordial_parameters,
+    hmcode_pmm_from_emulator_fast,
+    get_hmcode_pmm_fast,
 )
 from jaxmapse import jaxmapse as core
 
@@ -360,3 +362,71 @@ def test_interp_to_grid_validation():
 
     with pytest.raises(ValueError, match="Target grid out of bounds"):
         core._interp_to_grid(source_k, values, jnp.array([0.2, 1.5]))
+
+
+def test_hmcode_pmm_from_emulator_fast_validation_and_correctness():
+    # Setup mock/dummy emulators or load actual trained ones
+    emulators = load_trained_emulators()
+    linear_pmm_emu = emulators[DEFAULT_EMULATOR_ARTIFACT]["pmm"]
+    linear_pcb_emu = emulators[DEFAULT_EMULATOR_ARTIFACT]["pcb"]
+    
+    # standard mock params
+    params = {
+        "omega_b": 0.02237,
+        "omega_cdm": 0.12,
+        "h": 0.6736,
+        "n_s": 0.9649,
+        "ln10As": 3.044,
+        "w0": -1.0,
+        "wa": 0.0,
+        "omega_nubar": 0.0006442,
+    }
+    
+    # 1. z_coarse size validation
+    with pytest.raises(ValueError, match="N_z_coarse must be at least 5"):
+        hmcode_pmm_from_emulator_fast(
+            params, z=jnp.linspace(0.0, 1.0, 10), N_z_coarse=4,
+            linear_pmm_emu=linear_pmm_emu, linear_pcb_emu=linear_pcb_emu
+        )
+        
+    # 2. D is not None rejection
+    with pytest.raises(ValueError, match="Growth factor D is not supported on the fast/interpolated path"):
+        hmcode_pmm_from_emulator_fast(
+            params, z=jnp.linspace(0.0, 1.0, 10), N_z_coarse=6, D=jnp.ones(10),
+            linear_pmm_emu=linear_pmm_emu, linear_pcb_emu=linear_pcb_emu
+        )
+        
+    # 3. Validation of custom z_coarse and z_fine
+    z_coarse = jnp.linspace(0.0, 1.0, 6)
+    z_fine = jnp.linspace(0.0, 1.0, 10)
+    
+    # z_fine range check
+    with pytest.raises(ValueError, match="z_fine must lie within the range of z_coarse"):
+        hmcode_pmm_from_emulator_fast(
+            params, z_coarse=z_coarse, z_fine=jnp.array([z_coarse[-1] + 0.1]),
+            linear_pmm_emu=linear_pmm_emu, linear_pcb_emu=linear_pcb_emu
+        )
+
+    # z_coarse monotonicity check
+    with pytest.raises(ValueError, match="z_coarse must be strictly increasing"):
+        hmcode_pmm_from_emulator_fast(
+            params, z_coarse=z_coarse[::-1], z_fine=z_fine,
+            linear_pmm_emu=linear_pmm_emu, linear_pcb_emu=linear_pcb_emu
+        )
+
+    # 4. Success check with automatic coarse grid
+    k, pk_fast = hmcode_pmm_from_emulator_fast(
+        params, z=jnp.linspace(0.0, 1.0, 6), N_z_coarse=5,
+        linear_pmm_emu=linear_pmm_emu, linear_pcb_emu=linear_pcb_emu,
+        nM=32
+    )
+    assert pk_fast.shape == (6, len(k))
+
+    # 5. Success check with user coarse grid
+    k2, pk_smart = hmcode_pmm_from_emulator_fast(
+        params, z_coarse=z_coarse, z_fine=z_fine,
+        linear_pmm_emu=linear_pmm_emu, linear_pcb_emu=linear_pcb_emu,
+        nM=32
+    )
+    assert pk_smart.shape == (10, len(k2))
+

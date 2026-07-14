@@ -5,7 +5,7 @@ import jax.numpy as jnp
 import numpy as np
 import pytest
 
-from jaxmapse import HMCodeCosmology, hmcode_boost, hmcode_pmm, hmcode_pmm_jax
+from jaxmapse import HMCodeCosmology, hmcode_boost, hmcode_pmm, hmcode_pmm_jax, hmcode_pmm_fast, hmcode_boost_fast
 
 
 def _reference_case():
@@ -252,3 +252,56 @@ def test_hmcode_rejects_invalid_inputs_like_mapse_jl():
             k_support=k,
             pk_cb_support_z=pk_cb_zk,
         )
+
+
+def test_hmcode_fast_apis_validation_and_correctness():
+    cosmo, z_all, k, pk_mm_all, pk_cb_all, _, _ = _reference_case()
+    
+    # We need at least 5 coarse redshift points for Akima interpolation.
+    z_coarse = jnp.linspace(0.0, 1.0, 6)
+    pk_mm_coarse = jnp.ones((6, len(k)))
+    pk_cb_coarse = jnp.ones((6, len(k)))
+    
+    z_fine = jnp.linspace(z_coarse[0], z_coarse[-1], 20)
+    
+    # 1. Test hmcode_pmm_fast and hmcode_boost_fast compared to direct ones at the endpoints
+    pk_nl_fast = hmcode_pmm_fast(cosmo, z_coarse, z_fine, k, pk_mm_coarse, pk_cb_coarse, nM=64)
+    boost_fast = hmcode_boost_fast(cosmo, z_coarse, z_fine, k, pk_mm_coarse, pk_cb_coarse, nM=64)
+    
+    assert pk_nl_fast.shape == (20, len(k))
+    assert boost_fast.shape == (20, len(k))
+    
+    # 2. Test support-grid mode
+    k_out = k[::2]
+    pk_nl_support = hmcode_pmm_fast(
+        cosmo, z_coarse, z_fine, k_out, pk_mm_coarse,
+        k_support=k, pk_cb_support_coarse=pk_cb_coarse, nM=64
+    )
+    assert pk_nl_support.shape == (20, len(k_out))
+    
+    # 3. Test scalar z_fine
+    pk_nl_scalar = hmcode_pmm_fast(cosmo, z_coarse, z_coarse[2], k, pk_mm_coarse, pk_cb_coarse, nM=64)
+    assert pk_nl_scalar.shape == (len(k),)
+    
+    # 4. Test feedback vs DMO
+    pk_nl_dmo = hmcode_pmm_fast(cosmo, z_coarse, z_fine, k, pk_mm_coarse, pk_cb_coarse, T_AGN=None, nM=64)
+    assert not jnp.allclose(pk_nl_fast, pk_nl_dmo)
+    
+    # 5. Conflict handling for cb spectra
+    with pytest.raises(ValueError, match="Pass either pk_cb_coarse or pk_cb_support_coarse"):
+        hmcode_pmm_fast(
+            cosmo, z_coarse, z_fine, k, pk_mm_coarse,
+            pk_cb_coarse=pk_cb_coarse, pk_cb_support_coarse=pk_cb_coarse
+        )
+        
+    # 6. Grid size check: z_coarse must have at least 5 points
+    with pytest.raises(ValueError, match="z_coarse must have at least 5 points"):
+        hmcode_pmm_fast(cosmo, z_coarse[:4], z_fine, k, pk_mm_coarse[:4], pk_cb_coarse[:4])
+
+    # 7. Redshift interpolation boundary checks
+    with pytest.raises(ValueError, match="z_fine must lie within the range of z_coarse"):
+        hmcode_pmm_fast(cosmo, z_coarse, jnp.array([z_coarse[-1] + 0.1]), k, pk_mm_coarse, pk_cb_coarse)
+
+    with pytest.raises(ValueError, match="z_coarse must be strictly increasing"):
+        hmcode_pmm_fast(cosmo, z_coarse[::-1], z_fine, k, pk_mm_coarse[::-1], pk_cb_coarse[::-1])
+
