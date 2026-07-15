@@ -16,14 +16,12 @@ from jaxmapse import (
     BUILTIN_PREPROCESSING,
     DEFAULT_EMULATOR_ARTIFACT,
     load_trained_emulators,
-    LOAD_PRESETS,
     TransferFunctionEmulator,
     postprocessing_identity,
     postprocessing_lcdm_transfer_ratio,
     preprocessing_identity,
     preprocessing_drop_primordial_parameters,
     hmcode_pmm_from_emulator_fast,
-    get_hmcode_pmm_fast,
 )
 from jaxmapse import jaxmapse as core
 
