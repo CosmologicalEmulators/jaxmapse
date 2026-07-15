@@ -15,20 +15,41 @@ from jaxace.background import (
 
 try:
     from jax.tree_util import register_pytree_node
+
     try:
         register_pytree_node(
             w0waCDMCosmology,
             lambda x: (
-                (x.ln10As, x.ns, x.h, x.omega_b, x.omega_c, x.omega_k, x.m_nu, x.w0, x.wa),
-                None
+                (
+                    x.ln10As,
+                    x.ns,
+                    x.h,
+                    x.omega_b,
+                    x.omega_c,
+                    x.omega_k,
+                    x.m_nu,
+                    x.w0,
+                    x.wa,
+                ),
+                None,
             ),
-            lambda aux_data, children: w0waCDMCosmology(*children)
+            lambda aux_data, children: w0waCDMCosmology(*children),
         )
     except ValueError:
         pass
 except Exception:
     pass
 
+from .builtins import (
+    BUILTIN_POSTPROCESSING,
+    BUILTIN_PREPROCESSING,
+    LOAD_PRESETS,
+    lcdm_transfer_function,
+    postprocessing_identity,
+    postprocessing_lcdm_transfer_ratio,
+    preprocessing_drop_primordial_parameters,
+    preprocessing_identity,
+)
 from .halofit import (
     HalofitCosmology,
     halofit_background,
@@ -37,39 +58,29 @@ from .halofit import (
     halofit_pmm,
     halofit_pmm_from_params,
 )
-from .builtins import (
-    BUILTIN_POSTPROCESSING,
-    BUILTIN_PREPROCESSING,
-    LOAD_PRESETS,
-    lcdm_transfer_function,
-    postprocessing_identity,
-    postprocessing_lcdm_transfer_ratio,
-    preprocessing_identity,
-    preprocessing_drop_primordial_parameters,
-)
 from .hmcode import (
     HMCodeCosmology,
     hmcode_boost,
-    hmcode_Pmm,
-    hmcode_Pmm_jax,
-    hmcode_pmm,
-    hmcode_pmm_jax,
-    hmcode_pmm_fast,
     hmcode_boost_fast,
+    hmcode_Pmm,
+    hmcode_pmm,
+    hmcode_pmm_fast,
+    hmcode_Pmm_jax,
+    hmcode_pmm_jax,
 )
 from .jaxmapse import (
     DEFAULT_EMULATOR_ARTIFACT,
     TransferFunctionEmulator,
-    default_artifacts_toml,
     artifact_path,
+    default_artifacts_toml,
+    get_halofit_pmm,
+    get_hmcode_pmm,
+    get_hmcode_pmm_fast,
+    halofit_pmm_from_emulator,
+    hmcode_pmm_from_emulator,
+    hmcode_pmm_from_emulator_fast,
     load_emulator,
     load_trained_emulators,
-    halofit_pmm_from_emulator,
-    get_halofit_pmm,
-    hmcode_pmm_from_emulator,
-    get_hmcode_pmm,
-    hmcode_pmm_from_emulator_fast,
-    get_hmcode_pmm_fast,
 )
 from .primordial import primordial_Pk
 

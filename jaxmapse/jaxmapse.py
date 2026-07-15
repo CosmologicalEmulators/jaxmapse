@@ -51,10 +51,10 @@ def _interp_to_grid(source_k: Array, values: Array, target_k: Array) -> Array:
         if np.any(np.diff(target_host) <= 0.0):
             raise ValueError("target_k must be strictly increasing.")
         if target_host[0] < source_host[0] or target_host[-1] > source_host[-1]:
-                raise ValueError(
-                    f"Target grid out of bounds: [{target_host[0]}, {target_host[-1]}] "
-                    f"is outside source grid range [{source_host[0]}, {source_host[-1]}]."
-                )
+            raise ValueError(
+                f"Target grid out of bounds: [{target_host[0]}, {target_host[-1]}] "
+                f"is outside source grid range [{source_host[0]}, {source_host[-1]}]."
+            )
     except jax.errors.TracerArrayConversionError:
         pass
 
@@ -71,6 +71,7 @@ class TransferFunctionEmulator:
     JIT executable with ``self`` static, so changing model, normalization, PCA,
     or function attributes after that call can serve stale compiled state.
     """
+
     def __init__(
         self,
         trained_emulator: FlaxEmulator,
@@ -104,7 +105,9 @@ class TransferFunctionEmulator:
             return output
         return self.pca_mean + self.pca_projection @ output
 
-    def _predict_single(self, input_params: Array, z: float, D: Optional[float] = None) -> Array:
+    def _predict_single(
+        self, input_params: Array, z: float, D: Optional[float] = None
+    ) -> Array:
         """Core implementation for a single parameter set and single redshift."""
         preprocessed_input = self.preprocessing(input_params)
         nn_input = jnp.insert(preprocessed_input, 0, z)
@@ -115,34 +118,45 @@ class TransferFunctionEmulator:
         return self.postprocessing(input_params, output, D, self)
 
     def predict(
-        self, input_params: Array, z: Union[float, Array], D: Optional[Union[float, Array]] = None
+        self,
+        input_params: Array,
+        z: Union[float, Array],
+        D: Optional[Union[float, Array]] = None,
     ) -> Array:
         """
         Compute prediction. Handles scalar or vector z/D via automatic vmap.
         """
         if not hasattr(self, "_jit_predict"):
+
             @partial(jax.jit, static_argnums=(0,))
             def _jit_predict(self, params, z, D):
                 if jnp.ndim(z) == 0:
                     return self._predict_single(params, z, D)
                 else:
-                    return jax.vmap(self._predict_single, in_axes=(None, 0, 0 if D is not None else None))(
-                        params, z, D
-                    )
+                    return jax.vmap(
+                        self._predict_single,
+                        in_axes=(None, 0, 0 if D is not None else None),
+                    )(params, z, D)
+
             self._jit_predict = _jit_predict
 
         return self._jit_predict(self, input_params, z, D)
 
     def __call__(
-        self, input_params: Array, z: Union[float, Array], D: Optional[Union[float, Array]] = None
+        self,
+        input_params: Array,
+        z: Union[float, Array],
+        D: Optional[Union[float, Array]] = None,
     ) -> Array:
         return self.predict(input_params, z, D)
 
     def get_Pk(
-        self, input_params: Array, z: Union[float, Array], D: Optional[Union[float, Array]] = None
+        self,
+        input_params: Array,
+        z: Union[float, Array],
+        D: Optional[Union[float, Array]] = None,
     ) -> Array:
         return self.predict(input_params, z, D)
-
 
 
 def _evaluate_emu(emu, params, z, D):
@@ -277,7 +291,9 @@ def _load_preset(preset):
     if name in LOAD_PRESETS:
         return LOAD_PRESETS[name]
     available = ", ".join(sorted(LOAD_PRESETS))
-    raise ValueError(f"Unknown jaxmapse load preset {name!r}. Available presets: {available}")
+    raise ValueError(
+        f"Unknown jaxmapse load preset {name!r}. Available presets: {available}"
+    )
 
 
 def _validate_component_shapes(
@@ -364,9 +380,7 @@ def load_emulator(
             f"No {nn_setup_file!r} found in {path}. Pass a single component emulator directory."
         )
 
-    with open(
-        os.path.join(path, nn_setup_file), "r"
-    ) as f:
+    with open(os.path.join(path, nn_setup_file), "r") as f:
         nn_dict = json.load(f)
 
     weights = jnp.load(os.path.join(path, kwargs.get("weights_file", "weights.npy")))
@@ -514,20 +528,20 @@ def _parse_params(params, kwargs):
         p_dict.update(params)
     elif params is not None:
         try:
-            if hasattr(params, 'shape'):
+            if hasattr(params, "shape"):
                 if params.ndim == 1 and params.shape[0] == 8:
                     return params
-            elif hasattr(params, '__len__') and len(params) == 8:
+            elif hasattr(params, "__len__") and len(params) == 8:
                 return jnp.asarray(params)
         except Exception:
             pass
-        if hasattr(params, '_asdict'):
+        if hasattr(params, "_asdict"):
             p_dict.update(params._asdict())
-        elif hasattr(params, '__dict__'):
+        elif hasattr(params, "__dict__"):
             p_dict.update(params.__dict__)
-            
+
     p_dict.update(kwargs)
-    
+
     if p_dict.get("ln10As") is not None:
         ln10As = p_dict["ln10As"]
     elif p_dict.get("A_s") is not None:
@@ -536,26 +550,26 @@ def _parse_params(params, kwargs):
         raise ValueError("logA is ambiguous; pass ln10As or A_s explicitly.")
     else:
         raise ValueError("Missing parameter ln10As or A_s.")
-    ns = p_dict.get('ns', p_dict.get('n_s', None))
+    ns = p_dict.get("ns", p_dict.get("n_s", None))
     if ns is None:
-        raise ValueError('Missing parameter ns')
-    H0 = p_dict.get('H0', None)
-    h = p_dict.get('h', None)
+        raise ValueError("Missing parameter ns")
+    H0 = p_dict.get("H0", None)
+    h = p_dict.get("h", None)
     if H0 is None:
         if h is not None:
             H0 = h * 100.0
         else:
-            raise ValueError('Missing parameter H0 or h')
-    omega_b = p_dict.get('omega_b', p_dict.get('omega_b_h2', p_dict.get('ombh2', None)))
+            raise ValueError("Missing parameter H0 or h")
+    omega_b = p_dict.get("omega_b", p_dict.get("omega_b_h2", p_dict.get("ombh2", None)))
     if omega_b is None:
-        raise ValueError('Missing parameter omega_b')
-    omega_c = p_dict.get('omega_c', p_dict.get('omega_cdm', p_dict.get('omch2', None)))
+        raise ValueError("Missing parameter omega_b")
+    omega_c = p_dict.get("omega_c", p_dict.get("omega_cdm", p_dict.get("omch2", None)))
     if omega_c is None:
-        raise ValueError('Missing parameter omega_c')
-    Mnu = p_dict.get('Mnu', p_dict.get('m_nu', p_dict.get('mnu', 0.0)))
-    w0 = p_dict.get('w0', -1.0)
-    wa = p_dict.get('wa', 0.0)
-    
+        raise ValueError("Missing parameter omega_c")
+    Mnu = p_dict.get("Mnu", p_dict.get("m_nu", p_dict.get("mnu", 0.0)))
+    w0 = p_dict.get("w0", -1.0)
+    wa = p_dict.get("wa", 0.0)
+
     return jnp.stack([ln10As, ns, H0, omega_b, omega_c, Mnu, w0, wa])
 
 
@@ -606,7 +620,8 @@ def hmcode_pmm_from_emulator(
         Non-linear matter power spectrum in physical units (Mpc^3).
     """
     from jaxace.background import w0waCDMCosmology
-    from .hmcode import HMCodeCosmology, hmcode_pmm_jax, _sigma_grid_jax
+
+    from .hmcode import HMCodeCosmology, _sigma_grid_jax, hmcode_pmm_jax
 
     # Determine if the first argument was actually the redshift z
     is_first_arg_z = False
@@ -619,7 +634,9 @@ def hmcode_pmm_from_emulator(
 
     if is_first_arg_z:
         if z is not None:
-            raise ValueError("z passed both positionally and as keyword/second argument.")
+            raise ValueError(
+                "z passed both positionally and as keyword/second argument."
+            )
         z = input_params
         input_params = None
 
@@ -670,7 +687,9 @@ def hmcode_pmm_from_emulator(
     # Predict at z=0 to calculate sigma_8 natively
     pk_lin_mm_z0 = _evaluate_emu(linear_pmm_emu, params, 0.0, 1.0)
     Pmm_lin_h_z0 = pk_lin_mm_z0 * (h**3)
-    sigma_8_jax = _sigma_grid_jax(k_support_h, Pmm_lin_h_z0[None, :], jnp.array([8.0]))[0, 0]
+    sigma_8_jax = _sigma_grid_jax(k_support_h, Pmm_lin_h_z0[None, :], jnp.array([8.0]))[
+        0, 0
+    ]
 
     # Setup jaxmapse cosmology
     omega_nu = (params[5] / 93.14) / h**2
@@ -692,7 +711,6 @@ def hmcode_pmm_from_emulator(
     Pcb_lin_h_2d = jnp.atleast_2d(Pcb_lin_h)
     if nM is None:
         nM = 128
-
 
     # Solve non-linear HMCode2020 natively in JAX (JIT friendly)
     Pmm_jax_h = hmcode_pmm_jax(
@@ -744,7 +762,7 @@ def hmcode_pmm_from_emulator_fast(
         HMCode equations on the high-fidelity `z` (or `z_fine`) grid, it solves HMCode
         on the coarse grid (either `z_coarse` or `N_z_coarse` linearly spaced nodes) and
         uses Akima splines to reconstruct the results.
-        
+
         - Typical Errors: Redshift interpolation errors are generally small but largest
           at high k, high redshift, and in regions where the nonlinear boost factor
           evolves rapidly.
@@ -789,7 +807,9 @@ def hmcode_pmm_from_emulator_fast(
             )
 
         if D is not None:
-            raise ValueError("Growth factor D is not supported on the fast/interpolated path. Please use direct evaluation or pass D=None.")
+            raise ValueError(
+                "Growth factor D is not supported on the fast/interpolated path. Please use direct evaluation or pass D=None."
+            )
 
         # Generate coarse redshift grid
         z_min, z_max = jnp.min(z_arr), jnp.max(z_arr)
@@ -800,7 +820,9 @@ def hmcode_pmm_from_emulator_fast(
         if z_fine is None:
             raise ValueError("z_fine must be provided if z_coarse is specified.")
         if D is not None:
-            raise ValueError("Growth factor D is not supported on the fast/interpolated path. Please use direct evaluation or pass D=None.")
+            raise ValueError(
+                "Growth factor D is not supported on the fast/interpolated path. Please use direct evaluation or pass D=None."
+            )
         _z_coarse = z_coarse
         _z_fine = jnp.atleast_1d(z_fine)
         is_scalar = jnp.ndim(z_fine) == 0
@@ -809,7 +831,9 @@ def hmcode_pmm_from_emulator_fast(
     if not isinstance(_z_coarse, jax.core.Tracer):
         z_c_np = np.asarray(_z_coarse)
         if len(z_c_np) < 5:
-            raise ValueError("z_coarse must have at least 5 points for Akima interpolation.")
+            raise ValueError(
+                "z_coarse must have at least 5 points for Akima interpolation."
+            )
         if np.any(np.diff(z_c_np) <= 0.0):
             raise ValueError("z_coarse must be strictly increasing.")
 
@@ -846,4 +870,3 @@ def hmcode_pmm_from_emulator_fast(
 
 
 get_hmcode_pmm_fast = hmcode_pmm_from_emulator_fast
-

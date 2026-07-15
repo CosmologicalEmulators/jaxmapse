@@ -11,8 +11,8 @@ fixed input shapes and static ``nM``/feedback choices.
 
 from __future__ import annotations
 
-from functools import partial
 import math
+from functools import partial
 from typing import NamedTuple, Optional
 
 import jax
@@ -21,16 +21,27 @@ import numpy as np
 from jaxtyping import Array
 
 try:
-    from jaxace.background import w0waCDMCosmology
     from jax.tree_util import register_pytree_node
+    from jaxace.background import w0waCDMCosmology
+
     try:
         register_pytree_node(
             w0waCDMCosmology,
             lambda x: (
-                (x.ln10As, x.ns, x.h, x.omega_b, x.omega_c, x.omega_k, x.m_nu, x.w0, x.wa),
-                None
+                (
+                    x.ln10As,
+                    x.ns,
+                    x.h,
+                    x.omega_b,
+                    x.omega_c,
+                    x.omega_k,
+                    x.m_nu,
+                    x.w0,
+                    x.wa,
+                ),
+                None,
             ),
-            lambda aux_data, children: w0waCDMCosmology(*children)
+            lambda aux_data, children: w0waCDMCosmology(*children),
         )
     except ValueError:
         pass
@@ -66,7 +77,7 @@ class HMCodeCosmology(NamedTuple):
 def _normalize_cosmo(cosmo) -> HMCodeCosmology:
     if isinstance(cosmo, HMCodeCosmology):
         return cosmo
-    
+
     # Try reading as w0waCDMCosmology or dict
     if isinstance(cosmo, dict):
         h = cosmo.get("h")
@@ -89,14 +100,14 @@ def _normalize_cosmo(cosmo) -> HMCodeCosmology:
         w0 = getattr(cosmo, "w0", -1.0)
         wa = getattr(cosmo, "wa", 0.0)
         sigma_8 = getattr(cosmo, "sigma_8", 0.0)
-        
+
     omega_nu = m_nu / 93.14
     omega_m = omega_b + omega_c + omega_nu
     Omega_m = omega_m / h**2
     Omega_b = omega_b / h**2
     Omega_nu = omega_nu / h**2
     Omega_k = omega_k / h**2
-    
+
     return HMCodeCosmology(
         Omega_m=Omega_m,
         Omega_b=Omega_b,
@@ -228,17 +239,17 @@ def _x_w(a, cosmo: HMCodeCosmology, lcdm=False):
 def _hubble2(a, cosmo: HMCodeCosmology, lcdm=False):
     om_w = 1.0 - cosmo.Omega_m if lcdm else 1.0 - cosmo.Omega_m - cosmo.Omega_k
     om = 1.0 if lcdm else 1.0 - cosmo.Omega_k
-    return cosmo.Omega_m * a ** -3 + om_w * _x_w(a, cosmo, lcdm) + (1.0 - om) * a ** -2
+    return cosmo.Omega_m * a**-3 + om_w * _x_w(a, cosmo, lcdm) + (1.0 - om) * a**-2
 
 
 def _omega_m_a(a, cosmo: HMCodeCosmology, lcdm=False):
-    return cosmo.Omega_m * a ** -3 / _hubble2(a, cosmo, lcdm)
+    return cosmo.Omega_m * a**-3 / _hubble2(a, cosmo, lcdm)
 
 
 def _ah(a, cosmo: HMCodeCosmology, lcdm=False):
     om_w = 1.0 - cosmo.Omega_m if lcdm else 1.0 - cosmo.Omega_m - cosmo.Omega_k
     return -0.5 * (
-        cosmo.Omega_m * a ** -3
+        cosmo.Omega_m * a**-3
         + (1.0 + 3.0 * _w(a, cosmo, lcdm)) * om_w * _x_w(a, cosmo, lcdm)
     )
 
@@ -380,7 +391,9 @@ def _inverse_interp_decreasing(x_decreasing, y_increasing, x):
     return jnp.interp(x, x_decreasing[::-1], y_increasing[::-1])
 
 
-def _compute_params_jax(z, a_grid, growth, agrowth, sigma_zm, r_grid, k_support, pk_mm_zk, cosmo):
+def _compute_params_jax(
+    z, a_grid, growth, agrowth, sigma_zm, r_grid, k_support, pk_mm_zk, cosmo
+):
     f_nu = cosmo.Omega_nu / cosmo.Omega_m
     a = _scale_factor(z)
     om_mz = _omega_m_a(a, cosmo, False)
@@ -507,14 +520,90 @@ CI_INT_SMALL = (
     1.6782241814065079e-63,
     -6.575898833266316e-67,
 )
-P_F_RAT1 = (0.9999999996217391, 364.510603386319, 44218.54804128844, 2246756.9405961153, 49315316.72305596, 431867952.7967028, 1184799251.9992545, 455732675.9379532)
-Q_F_RAT1 = (1.0, 366.5106027322935, 44927.56981497069, 2328535.488220404, 53117852.01722826, 503353106.6724187, 1657528501.5623176, 1174653283.7041042)
-R_G_RAT1 = (0.999999999204849, 513.8550487530732, 92293.48345259381, 7407134.186234174, 281423561.62841356, 4928089035.773462, 35524762685.554024, 79194271662.05495, 17942522624.4139)
-S_G_RAT1 = (1.0, 519.8550470881487, 95292.61550812594, 7921545.967976676, 319775677.90347815, 6227313470.243901, 54570971054.996445, 182417501666.45703, 154071481488.65445)
-P_F_ASYM_NUM = (1.9999999999999978, 2220.611938043496, 847490.0762398824, 139592679.54823944, 10197205463.267975, 302298652645.2408, 2750405380428.847, 2181898970468.7498)
-P_F_ASYM_DEN = (1.0, 1122.3059690217168, 436852.7097485132, 74654702.14065616, 5858003475.188747, 201579803792.09885, 2622914185768.9644, 8785290733498.676)
-R_G_ASYM_NUM = (5.999999999999999, 9652.774604499714, 5607762.699656884, 1502266771.8927317, 196442710647.33087, 121913682811632.5, 3192438989864569.5, 2.5876053010027484e16, 1.2754978896268878e16)
-R_G_ASYM_DEN = (1.0, 1628.7957674166142, 966363.0319578709, 268397347.5095067, 37388510548.052925, 2602858566615.2144, 85134283716949.72, 1130407936162795.2, 4251984147948980.0)
+P_F_RAT1 = (
+    0.9999999996217391,
+    364.510603386319,
+    44218.54804128844,
+    2246756.9405961153,
+    49315316.72305596,
+    431867952.7967028,
+    1184799251.9992545,
+    455732675.9379532,
+)
+Q_F_RAT1 = (
+    1.0,
+    366.5106027322935,
+    44927.56981497069,
+    2328535.488220404,
+    53117852.01722826,
+    503353106.6724187,
+    1657528501.5623176,
+    1174653283.7041042,
+)
+R_G_RAT1 = (
+    0.999999999204849,
+    513.8550487530732,
+    92293.48345259381,
+    7407134.186234174,
+    281423561.62841356,
+    4928089035.773462,
+    35524762685.554024,
+    79194271662.05495,
+    17942522624.4139,
+)
+S_G_RAT1 = (
+    1.0,
+    519.8550470881487,
+    95292.61550812594,
+    7921545.967976676,
+    319775677.90347815,
+    6227313470.243901,
+    54570971054.996445,
+    182417501666.45703,
+    154071481488.65445,
+)
+P_F_ASYM_NUM = (
+    1.9999999999999978,
+    2220.611938043496,
+    847490.0762398824,
+    139592679.54823944,
+    10197205463.267975,
+    302298652645.2408,
+    2750405380428.847,
+    2181898970468.7498,
+)
+P_F_ASYM_DEN = (
+    1.0,
+    1122.3059690217168,
+    436852.7097485132,
+    74654702.14065616,
+    5858003475.188747,
+    201579803792.09885,
+    2622914185768.9644,
+    8785290733498.676,
+)
+R_G_ASYM_NUM = (
+    5.999999999999999,
+    9652.774604499714,
+    5607762.699656884,
+    1502266771.8927317,
+    196442710647.33087,
+    121913682811632.5,
+    3192438989864569.5,
+    2.5876053010027484e16,
+    1.2754978896268878e16,
+)
+R_G_ASYM_DEN = (
+    1.0,
+    1628.7957674166142,
+    966363.0319578709,
+    268397347.5095067,
+    37388510548.052925,
+    2602858566615.2144,
+    85134283716949.72,
+    1130407936162795.2,
+    4251984147948980.0,
+)
 
 
 def _si_fast(x):
@@ -524,8 +613,12 @@ def _si_fast(x):
     sx, cx = jnp.sin(x), jnp.cos(x)
     f_rat = (_evalpoly(invt, P_F_RAT1) / _evalpoly(invt, Q_F_RAT1)) / x
     g_rat = (_evalpoly(invt, R_G_RAT1) / _evalpoly(invt, S_G_RAT1)) * invt
-    f_asym = (1.0 - _evalpoly(invt, P_F_ASYM_NUM) * invt / _evalpoly(invt, P_F_ASYM_DEN)) / x
-    g_asym = (1.0 - _evalpoly(invt, R_G_ASYM_NUM) * invt / _evalpoly(invt, R_G_ASYM_DEN)) * invt
+    f_asym = (
+        1.0 - _evalpoly(invt, P_F_ASYM_NUM) * invt / _evalpoly(invt, P_F_ASYM_DEN)
+    ) / x
+    g_asym = (
+        1.0 - _evalpoly(invt, R_G_ASYM_NUM) * invt / _evalpoly(invt, R_G_ASYM_DEN)
+    ) * invt
     f = jnp.where(t <= 144.0, f_rat, f_asym)
     g = jnp.where(t <= 144.0, g_rat, g_asym)
     large = jnp.pi / 2.0 - f * cx - g * sx
@@ -539,8 +632,12 @@ def _ci_fast(x):
     sx, cx = jnp.sin(x), jnp.cos(x)
     f_rat = (_evalpoly(invt, P_F_RAT1) / _evalpoly(invt, Q_F_RAT1)) / x
     g_rat = (_evalpoly(invt, R_G_RAT1) / _evalpoly(invt, S_G_RAT1)) * invt
-    f_asym = (1.0 - _evalpoly(invt, P_F_ASYM_NUM) * invt / _evalpoly(invt, P_F_ASYM_DEN)) / x
-    g_asym = (1.0 - _evalpoly(invt, R_G_ASYM_NUM) * invt / _evalpoly(invt, R_G_ASYM_DEN)) * invt
+    f_asym = (
+        1.0 - _evalpoly(invt, P_F_ASYM_NUM) * invt / _evalpoly(invt, P_F_ASYM_DEN)
+    ) / x
+    g_asym = (
+        1.0 - _evalpoly(invt, R_G_ASYM_NUM) * invt / _evalpoly(invt, R_G_ASYM_DEN)
+    ) * invt
     f = jnp.where(t <= 144.0, f_rat, f_asym)
     g = jnp.where(t <= 144.0, g_rat, g_asym)
     large = f * sx - g * cx
@@ -569,7 +666,24 @@ def _feedback_parameters_jax(t_agn):
     )
 
 
-def _assemble_pass_jax(k, z, cosmo, M, R, params, sigma_zm, nu_zm, pk_lin_zk, pk_wig_zk, a_grid, growth, growth_lcdm, tweaks=True, include_feedback=False, t_agn=10.0**7.8):
+def _assemble_pass_jax(
+    k,
+    z,
+    cosmo,
+    M,
+    R,
+    params,
+    sigma_zm,
+    nu_zm,
+    pk_lin_zk,
+    pk_wig_zk,
+    a_grid,
+    growth,
+    growth_lcdm,
+    tweaks=True,
+    include_feedback=False,
+    t_agn=10.0**7.8,
+):
     rhom = _comoving_matter_density(cosmo.Omega_m)
     om_m, om_b, om_nu = cosmo.Omega_m, cosmo.Omega_b, cosmo.Omega_nu
     om_c = om_m - om_b - om_nu
@@ -584,7 +698,23 @@ def _assemble_pass_jax(k, z, cosmo, M, R, params, sigma_zm, nu_zm, pk_lin_zk, pk
     g_lcdm_ac = jnp.interp(ac, a_grid, growth_lcdm)
     logR = jnp.log(R)
 
-    def one_z(zz, sigma_m, nu_m, w1h_m, pk_lin, pk_wig, dc, dv, eta, alpha, kdamp, fdamp, kstar, sigv, B_base):
+    def one_z(
+        zz,
+        sigma_m,
+        nu_m,
+        w1h_m,
+        pk_lin,
+        pk_wig,
+        dc,
+        dv,
+        eta,
+        alpha,
+        kdamp,
+        fdamp,
+        kstar,
+        sigv,
+        B_base,
+    ):
         a_obs = _scale_factor(zz)
         g_obs = jnp.interp(a_obs, a_grid, growth)
         dolag = (g_ac / g_lcdm_ac) * (jnp.interp(a_obs, a_grid, growth_lcdm) / g_obs)
@@ -612,7 +742,7 @@ def _assemble_pass_jax(k, z, cosmo, M, R, params, sigma_zm, nu_zm, pk_lin_zk, pk
         x4 = (k / kstar) ** 4
         p1h = x4 / (1.0 + x4) * I1h
         if tweaks:
-            pk_dwl = pk_lin - (1.0 - jnp.exp(-(k * sigv) ** 2)) * pk_wig
+            pk_dwl = pk_lin - (1.0 - jnp.exp(-((k * sigv) ** 2))) * pk_wig
             y = (k / kdamp) ** ND_HMCODE
             p2h = pk_dwl * (1.0 - fdamp * y / (1.0 + y))
             return (p2h**alpha + p1h**alpha) ** (1.0 / alpha)
@@ -671,14 +801,16 @@ def hmcode_pmm_jax(
     sigma_zm = _sigma_grid_jax(k_support, pk_cb_z, R)
     a_grid, growth, agrowth = _growth_tables_jax(cosmo, lcdm=False)
     _, growth_lcdm, _ = _growth_tables_jax(cosmo, lcdm=True)
-    params = _compute_params_jax(z, a_grid, growth, agrowth, sigma_zm, R, k_support, pk_mm_z, cosmo)
+    params = _compute_params_jax(
+        z, a_grid, growth, agrowth, sigma_zm, R, k_support, pk_mm_z, cosmo
+    )
     nu_zm = params.delta_c[:, None] / sigma_zm
 
     omh2 = cosmo.Omega_m * cosmo.h**2
     obh2 = cosmo.Omega_b * cosmo.h**2
-    pk_wig = jax.vmap(lambda row: _pk_wiggle_jax(k, row, cosmo.h, omh2, obh2, cosmo.n_s))(
-        pk_mm_out
-    )
+    pk_wig = jax.vmap(
+        lambda row: _pk_wiggle_jax(k, row, cosmo.h, omh2, obh2, cosmo.n_s)
+    )(pk_mm_out)
     base = _assemble_pass_jax(
         k,
         z,
@@ -827,14 +959,16 @@ hmcode_Pmm_jax = hmcode_pmm_jax
 def _validate_concrete_z(z_coarse: Array, z_fine: Array):
     # Enforce minimum size on coarse grid (Akima needs >= 5 points)
     if len(z_coarse) < 5:
-        raise ValueError("z_coarse must have at least 5 points for Akima interpolation.")
+        raise ValueError(
+            "z_coarse must have at least 5 points for Akima interpolation."
+        )
 
     # Validate concrete (non-traced) values
     if not isinstance(z_coarse, jax.core.Tracer):
         z_c_np = np.asarray(z_coarse)
         if np.any(np.diff(z_c_np) <= 0.0):
             raise ValueError("z_coarse must be strictly increasing.")
-            
+
     if not isinstance(z_fine, jax.core.Tracer):
         z_f_np = np.atleast_1d(np.asarray(z_fine))
         if len(z_f_np) > 1 and np.any(np.diff(z_f_np) <= 0.0):
@@ -869,7 +1003,7 @@ def hmcode_pmm_fast(
         This fast API is an approximation. Instead of evaluating the full non-linear
         HMCode equations on the high-fidelity `z_fine` grid, it solves HMCode on
         the coarse grid `z_coarse` and uses Akima splines to reconstruct the results.
-        
+
         - Typical Errors: Redshift interpolation errors are generally small but largest
           at high k, high redshift, and in regions where the nonlinear boost factor
           evolves rapidly.
@@ -905,11 +1039,11 @@ def hmcode_pmm_fast(
     z_fine = jnp.asarray(z_fine)
     k = jnp.asarray(k)
     k_sup = k if k_support is None else jnp.asarray(k_support)
-    
+
     pk_mm = jnp.asarray(pk_mm_coarse)
     if pk_mm.ndim == 1:
         pk_mm = pk_mm[None, :]
-        
+
     if pk_cb_support_coarse is not None and pk_cb_coarse is not None:
         raise ValueError("Pass either pk_cb_coarse or pk_cb_support_coarse, not both.")
     pk_cb = pk_cb_support_coarse if pk_cb_support_coarse is not None else pk_cb_coarse
@@ -918,8 +1052,18 @@ def hmcode_pmm_fast(
         pk_cb = pk_cb[None, :]
 
     _validate_concrete_z(z_coarse, z_fine)
-    if not (isinstance(z_coarse, jax.core.Tracer) or isinstance(pk_mm, jax.core.Tracer) or isinstance(pk_cb, jax.core.Tracer)):
-        _validate_inputs(np.asarray(z_coarse), np.asarray(k), np.asarray(k_sup), np.asarray(pk_mm), np.asarray(pk_cb))
+    if not (
+        isinstance(z_coarse, jax.core.Tracer)
+        or isinstance(pk_mm, jax.core.Tracer)
+        or isinstance(pk_cb, jax.core.Tracer)
+    ):
+        _validate_inputs(
+            np.asarray(z_coarse),
+            np.asarray(k),
+            np.asarray(k_sup),
+            np.asarray(pk_mm),
+            np.asarray(pk_cb),
+        )
 
     nM_eff = _hmcode_mass_steps(nM)
 
@@ -964,7 +1108,7 @@ def hmcode_boost_fast(
         This fast API is an approximation. Instead of evaluating the full non-linear
         HMCode equations on the high-fidelity `z_fine` grid, it solves HMCode on
         the coarse grid `z_coarse` and uses Akima splines to reconstruct the results.
-        
+
         - Typical Errors: Redshift interpolation errors are generally small but largest
           at high k, high redshift, and in regions where the nonlinear boost factor
           evolves rapidly.
@@ -1000,11 +1144,11 @@ def hmcode_boost_fast(
     z_fine = jnp.asarray(z_fine)
     k = jnp.asarray(k)
     k_sup = k if k_support is None else jnp.asarray(k_support)
-    
+
     pk_mm = jnp.asarray(pk_mm_coarse)
     if pk_mm.ndim == 1:
         pk_mm = pk_mm[None, :]
-        
+
     if pk_cb_support_coarse is not None and pk_cb_coarse is not None:
         raise ValueError("Pass either pk_cb_coarse or pk_cb_support_coarse, not both.")
     pk_cb = pk_cb_support_coarse if pk_cb_support_coarse is not None else pk_cb_coarse
@@ -1013,8 +1157,18 @@ def hmcode_boost_fast(
         pk_cb = pk_cb[None, :]
 
     _validate_concrete_z(z_coarse, z_fine)
-    if not (isinstance(z_coarse, jax.core.Tracer) or isinstance(pk_mm, jax.core.Tracer) or isinstance(pk_cb, jax.core.Tracer)):
-        _validate_inputs(np.asarray(z_coarse), np.asarray(k), np.asarray(k_sup), np.asarray(pk_mm), np.asarray(pk_cb))
+    if not (
+        isinstance(z_coarse, jax.core.Tracer)
+        or isinstance(pk_mm, jax.core.Tracer)
+        or isinstance(pk_cb, jax.core.Tracer)
+    ):
+        _validate_inputs(
+            np.asarray(z_coarse),
+            np.asarray(k),
+            np.asarray(k_sup),
+            np.asarray(pk_mm),
+            np.asarray(pk_cb),
+        )
 
     nM_eff = _hmcode_mass_steps(nM)
 
@@ -1036,4 +1190,3 @@ def hmcode_boost_fast(
     boost_coarse = Pk_nl_coarse / pk_lin_coarse
 
     return akima_interpolation(boost_coarse, z_coarse, z_fine)
-

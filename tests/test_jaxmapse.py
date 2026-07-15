@@ -15,15 +15,17 @@ from jaxmapse import (
     BUILTIN_POSTPROCESSING,
     BUILTIN_PREPROCESSING,
     DEFAULT_EMULATOR_ARTIFACT,
-    load_trained_emulators,
     TransferFunctionEmulator,
-    postprocessing_identity,
-    postprocessing_lcdm_transfer_ratio,
-    preprocessing_identity,
-    preprocessing_drop_primordial_parameters,
     hmcode_pmm_from_emulator_fast,
 )
 from jaxmapse import jaxmapse as core
+from jaxmapse import (
+    load_trained_emulators,
+    postprocessing_identity,
+    postprocessing_lcdm_transfer_ratio,
+    preprocessing_drop_primordial_parameters,
+    preprocessing_identity,
+)
 
 # Configuration
 jax.config.update("jax_enable_x64", True)
@@ -135,7 +137,10 @@ def test_builtin_preprocessing_and_postprocessing_registries():
     params = jnp.arange(8.0)
 
     assert BUILTIN_PREPROCESSING["identity"] is preprocessing_identity
-    assert BUILTIN_PREPROCESSING["drop_primordial_parameters"] is preprocessing_drop_primordial_parameters
+    assert (
+        BUILTIN_PREPROCESSING["drop_primordial_parameters"]
+        is preprocessing_drop_primordial_parameters
+    )
     assert BUILTIN_POSTPROCESSING["identity"] is postprocessing_identity
     assert (
         BUILTIN_POSTPROCESSING["lcdm_transfer_ratio"]
@@ -144,7 +149,9 @@ def test_builtin_preprocessing_and_postprocessing_registries():
 
     assert jnp.allclose(preprocessing_identity(params), params)
     assert jnp.allclose(preprocessing_drop_primordial_parameters(params), params[2:])
-    assert jnp.allclose(postprocessing_identity(params, params + 1.0, None, None), params + 1.0)
+    assert jnp.allclose(
+        postprocessing_identity(params, params + 1.0, None, None), params + 1.0
+    )
 
 
 def test_load_component_function_uses_named_builtins_and_legacy_files(tmp_path):
@@ -232,11 +239,23 @@ def test_component_shape_validation_matches_mapse_jl_contract():
 
     with pytest.raises(ValueError, match="inminmax.npy has shape"):
         core._validate_component_shapes(
-            "artifact", k, jnp.zeros((2, 2)), out_minmax, pca_mean, pca_projection, metadata
+            "artifact",
+            k,
+            jnp.zeros((2, 2)),
+            out_minmax,
+            pca_mean,
+            pca_projection,
+            metadata,
         )
     with pytest.raises(ValueError, match="outminmax.npy has shape"):
         core._validate_component_shapes(
-            "artifact", k, in_minmax, jnp.zeros((3, 2)), pca_mean, pca_projection, metadata
+            "artifact",
+            k,
+            in_minmax,
+            jnp.zeros((3, 2)),
+            pca_mean,
+            pca_projection,
+            metadata,
         )
     with pytest.raises(ValueError, match="pca_mean.npy has shape"):
         core._validate_component_shapes(
@@ -267,7 +286,6 @@ def test_parse_params_converts_as_and_rejects_ambiguous_loga():
 
     with pytest.raises(ValueError, match="logA is ambiguous"):
         core._parse_params({**params, "ln10As": None, "logA": 3.044}, {})
-
 
 
 def test_load_trained_emulators_returns_cached_component_dict(monkeypatch):
@@ -306,6 +324,7 @@ def test_load_trained_emulators_returns_cached_component_dict(monkeypatch):
     cached = load_trained_emulators()
     assert cached is trained
     assert calls == []
+
 
 def test_default_artifact_metadata():
     artifacts_toml = Path(__file__).resolve().parents[1] / "Artifacts.toml"
@@ -367,7 +386,7 @@ def test_hmcode_pmm_from_emulator_fast_validation_and_correctness():
     emulators = load_trained_emulators()
     linear_pmm_emu = emulators[DEFAULT_EMULATOR_ARTIFACT]["pmm"]
     linear_pcb_emu = emulators[DEFAULT_EMULATOR_ARTIFACT]["pcb"]
-    
+
     # standard mock params
     params = {
         "omega_b": 0.02237,
@@ -379,52 +398,75 @@ def test_hmcode_pmm_from_emulator_fast_validation_and_correctness():
         "wa": 0.0,
         "omega_nubar": 0.0006442,
     }
-    
+
     # 1. z_coarse size validation
     with pytest.raises(ValueError, match="N_z_coarse must be at least 5"):
         hmcode_pmm_from_emulator_fast(
-            params, z=jnp.linspace(0.0, 1.0, 10), N_z_coarse=4,
-            linear_pmm_emu=linear_pmm_emu, linear_pcb_emu=linear_pcb_emu
+            params,
+            z=jnp.linspace(0.0, 1.0, 10),
+            N_z_coarse=4,
+            linear_pmm_emu=linear_pmm_emu,
+            linear_pcb_emu=linear_pcb_emu,
         )
-        
+
     # 2. D is not None rejection
-    with pytest.raises(ValueError, match="Growth factor D is not supported on the fast/interpolated path"):
+    with pytest.raises(
+        ValueError,
+        match="Growth factor D is not supported on the fast/interpolated path",
+    ):
         hmcode_pmm_from_emulator_fast(
-            params, z=jnp.linspace(0.0, 1.0, 10), N_z_coarse=6, D=jnp.ones(10),
-            linear_pmm_emu=linear_pmm_emu, linear_pcb_emu=linear_pcb_emu
+            params,
+            z=jnp.linspace(0.0, 1.0, 10),
+            N_z_coarse=6,
+            D=jnp.ones(10),
+            linear_pmm_emu=linear_pmm_emu,
+            linear_pcb_emu=linear_pcb_emu,
         )
-        
+
     # 3. Validation of custom z_coarse and z_fine
     z_coarse = jnp.linspace(0.0, 1.0, 6)
     z_fine = jnp.linspace(0.0, 1.0, 10)
-    
+
     # z_fine range check
-    with pytest.raises(ValueError, match="z_fine must lie within the range of z_coarse"):
+    with pytest.raises(
+        ValueError, match="z_fine must lie within the range of z_coarse"
+    ):
         hmcode_pmm_from_emulator_fast(
-            params, z_coarse=z_coarse, z_fine=jnp.array([z_coarse[-1] + 0.1]),
-            linear_pmm_emu=linear_pmm_emu, linear_pcb_emu=linear_pcb_emu
+            params,
+            z_coarse=z_coarse,
+            z_fine=jnp.array([z_coarse[-1] + 0.1]),
+            linear_pmm_emu=linear_pmm_emu,
+            linear_pcb_emu=linear_pcb_emu,
         )
 
     # z_coarse monotonicity check
     with pytest.raises(ValueError, match="z_coarse must be strictly increasing"):
         hmcode_pmm_from_emulator_fast(
-            params, z_coarse=z_coarse[::-1], z_fine=z_fine,
-            linear_pmm_emu=linear_pmm_emu, linear_pcb_emu=linear_pcb_emu
+            params,
+            z_coarse=z_coarse[::-1],
+            z_fine=z_fine,
+            linear_pmm_emu=linear_pmm_emu,
+            linear_pcb_emu=linear_pcb_emu,
         )
 
     # 4. Success check with automatic coarse grid
     k, pk_fast = hmcode_pmm_from_emulator_fast(
-        params, z=jnp.linspace(0.0, 1.0, 6), N_z_coarse=5,
-        linear_pmm_emu=linear_pmm_emu, linear_pcb_emu=linear_pcb_emu,
-        nM=32
+        params,
+        z=jnp.linspace(0.0, 1.0, 6),
+        N_z_coarse=5,
+        linear_pmm_emu=linear_pmm_emu,
+        linear_pcb_emu=linear_pcb_emu,
+        nM=32,
     )
     assert pk_fast.shape == (6, len(k))
 
     # 5. Success check with user coarse grid
     k2, pk_smart = hmcode_pmm_from_emulator_fast(
-        params, z_coarse=z_coarse, z_fine=z_fine,
-        linear_pmm_emu=linear_pmm_emu, linear_pcb_emu=linear_pcb_emu,
-        nM=32
+        params,
+        z_coarse=z_coarse,
+        z_fine=z_fine,
+        linear_pmm_emu=linear_pmm_emu,
+        linear_pcb_emu=linear_pcb_emu,
+        nM=32,
     )
     assert pk_smart.shape == (10, len(k2))
-
