@@ -739,8 +739,10 @@ def _assemble_pass_jax(
             W = (om_c / om_m + fg)[:, None] * W + fstar
 
         I1h = (W**2).T @ w1h_m * rhom
-        x4 = (k / kstar) ** 4
-        p1h = x4 / (1.0 + x4) * I1h
+        safe_kstar = jnp.where(kstar > 0.0, kstar, 1.0)
+        x4 = (k / safe_kstar) ** 4
+        p1h_fac = jnp.where(kstar > 0.0, x4 / (1.0 + x4), 1.0)
+        p1h = p1h_fac * I1h
         if tweaks:
             pk_dwl = pk_lin - (1.0 - jnp.exp(-((k * sigv) ** 2))) * pk_wig
             y = (k / kdamp) ** ND_HMCODE
@@ -894,7 +896,10 @@ def hmcode_pmm(
 
     ``k_support`` must be uniformly spaced in ``log(k)`` because HMCode's BAO
     smoothing uses a single log-grid spacing. ``k`` may be any strictly
-    increasing output grid contained within the support range.
+    increasing output grid contained within the support range. Note that evaluating
+    HMCode on a different output grid (``k != k_support``) inherently introduces a
+    small numerical approximation (up to ~0.5%) due to internal log-log interpolation
+    from the support grid to the output grid.
     """
     cosmo = _normalize_cosmo(cosmo)
     scalar_z = np.asarray(z).ndim == 0
