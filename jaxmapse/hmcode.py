@@ -388,7 +388,12 @@ def _sigma_v_jax(k_support, pk_mm_zk):
 
 
 def _inverse_interp_decreasing(x_decreasing, y_increasing, x):
-    return jnp.interp(x, x_decreasing[::-1], y_increasing[::-1])
+    # The inverse relation is only sampled on the supplied R grid.  Reduced
+    # k-support can leave log(delta_c) outside that sampled sigma range; the
+    # Julia implementation clamps to the corresponding R endpoint rather than
+    # attempting a root solve with no bracket.
+    x_clipped = jnp.clip(x, x_decreasing[-1], x_decreasing[0])
+    return jnp.interp(x_clipped, x_decreasing[::-1], y_increasing[::-1])
 
 
 def _compute_params_jax(

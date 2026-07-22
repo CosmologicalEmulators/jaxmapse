@@ -659,3 +659,14 @@ def test_hmcode_pmm_baryonic_smart_api():
     )
     assert pk_sc.shape == (len(k_sc),)
     assert jnp.all(jnp.isfinite(pk_sc))
+
+
+def test_inverse_sigma_radius_clamps_reduced_support():
+    from jaxmapse.hmcode import _inverse_interp_decreasing
+
+    log_sigma = jnp.array([2.0, 1.0, 0.0])
+    log_radius = jnp.array([0.0, 1.0, 2.0])
+    result = _inverse_interp_decreasing(
+        log_sigma, log_radius, jnp.array([3.0, -1.0, 1.5])
+    )
+    assert np.allclose(np.asarray(result), [0.0, 2.0, 0.5])
