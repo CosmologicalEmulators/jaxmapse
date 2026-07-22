@@ -606,3 +606,56 @@ def test_hmcode_dmo_invariant():
     if max_err > 3.0e-3:
         print(f"DMO Max rel err: {max_err} at z={z[max_idx[0]]}, k={k_ref[max_idx[1]]}")
     assert jnp.allclose(dmo_out_ref, dmo_ref_zk, rtol=3.0e-3, atol=1e-12)
+
+
+def test_hmcode_pmm_baryonic_smart_api():
+    from jaxmapse import (
+        DEFAULT_EMULATOR_ARTIFACT,
+        build_smart_coarse_grid,
+        hmcode_pmm_baryonic_smart,
+        predict_baryonic_discontinuity,
+        trained_emulators,
+    )
+
+    params = dict(
+        ln10As=3.044,
+        ns=0.9649,
+        H0=67.36,
+        omega_b=0.02237,
+        omega_c=0.12,
+        Mnu=0.06,
+        w0=-1.0,
+        wa=0.0,
+    )
+
+    # 1. Feature prediction
+    z_feat = predict_baryonic_discontinuity(params, T_AGN=10.0**7.8)
+    assert 0.0 < z_feat < 3.5
+
+    # 2. Grid builder
+    cg = build_smart_coarse_grid(0.0, 3.5, N_coarse=20, z_feature=z_feat)
+    assert len(cg) == 20
+    assert float(z_feat) in np.asarray(cg)
+
+    # 3. Vector z_fine
+    z_fine = jnp.linspace(0.0, 3.5, 100)
+    emulators = trained_emulators[DEFAULT_EMULATOR_ARTIFACT]
+    k_vec, pk_vec = hmcode_pmm_baryonic_smart(
+        params,
+        z_fine=z_fine,
+        N_coarse=20,
+        linear_pmm_emu=emulators.linear_pmm,
+        linear_pcb_emu=emulators.linear_pcb,
+    )
+    assert pk_vec.shape == (100, len(k_vec))
+    assert jnp.all(jnp.isfinite(pk_vec))
+
+    # 4. Scalar z_fine
+    k_sc, pk_sc = hmcode_pmm_baryonic_smart(
+        params,
+        z_fine=1.0,
+        linear_pmm_emu=emulators.linear_pmm,
+        linear_pcb_emu=emulators.linear_pcb,
+    )
+    assert pk_sc.shape == (len(k_sc),)
+    assert jnp.all(jnp.isfinite(pk_sc))

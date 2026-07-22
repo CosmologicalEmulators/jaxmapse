@@ -168,8 +168,9 @@ def _evaluate_emu(emu, params, z, D):
 def halofit_pmm_from_emulator(
     input_params: Array,
     z: Union[float, Array],
+    *,
+    linear_pmm_emu: TransferFunctionEmulator,
     D: Optional[Union[float, Array]] = None,
-    linear_pmm_emu: TransferFunctionEmulator = None,
     omega_m_z: Optional[Union[float, Array]] = None,
     omega_v_z: Optional[Union[float, Array]] = None,
 ) -> tuple[Array, Array]:
@@ -202,9 +203,6 @@ def halofit_pmm_from_emulator(
             wa=params[7],
         )
         D = growth_cosmology.D_z(z_arr)
-
-    if linear_pmm_emu is None:
-        raise ValueError("linear_pmm_emu must be provided.")
 
     pk_lin_mm = _evaluate_emu(linear_pmm_emu, params, z_arr, D)
     halofit_cpar = halofit_cosmology(params)
@@ -514,6 +512,50 @@ def load_trained_emulators(force_reload: bool = False):
     return _TRAINED_EMULATORS_CACHE
 
 
+class _LazyTrainedEmulators(dict):
+    """Dict-compatible lazy registry for the official trained emulators."""
+
+    def _load(self):
+        if not self:
+            loaded = load_trained_emulators()
+            super().update(
+                {name: _TrainedEmulatorBundle(components)
+                 for name, components in loaded.items()}
+            )
+        return self
+
+    def get(self, key, default=None):
+        return dict.get(self._load(), key, default)
+
+    def __getitem__(self, key):
+        return dict.__getitem__(self._load(), key)
+
+    def __contains__(self, key):
+        return key in self._load()
+
+
+class _TrainedEmulatorBundle:
+    """Compatibility view of the official Pmm/Pcb emulator pair."""
+
+    def __init__(self, components):
+        self.linear_pmm = components["pmm"]
+        self.linear_pcb = components["pcb"]
+
+    def __getitem__(self, key):
+        return {"pmm": self.linear_pmm, "pcb": self.linear_pcb}[key]
+
+    def get_linear_pmm(self, input_params, z, D=None):
+        return self.linear_pmm.get_Pk(input_params, z, D)
+
+    def get_linear_pkcb(self, input_params, z, D=None):
+        return self.linear_pcb.get_Pk(input_params, z, D)
+
+
+# Public registry retained for notebook and user workflows. Loading remains
+# lazy, so importing jaxmapse does not download artifacts unexpectedly.
+trained_emulators = _LazyTrainedEmulators()
+
+
 def save_pca_metadata(path: str, mu: Array, basis: Array):
     """
     Saves PCA metadata needed for reconstruction.
@@ -577,9 +619,9 @@ def hmcode_pmm_from_emulator(
     input_params: Optional[Union[Array, dict]] = None,
     z: Optional[Union[float, Array]] = None,
     *,
+    linear_pmm_emu: TransferFunctionEmulator,
+    linear_pcb_emu: TransferFunctionEmulator,
     D: Optional[Union[float, Array]] = None,
-    linear_pmm_emu: Optional[TransferFunctionEmulator] = None,
-    linear_pcb_emu: Optional[TransferFunctionEmulator] = None,
     T_AGN: Optional[float] = None,
     nM: int = 128,
     k_out: Optional[Array] = None,
@@ -598,17 +640,19 @@ def hmcode_pmm_from_emulator(
         Redshift(s) at which to evaluate the power spectrum.
     D: float or Array, optional
         Linear growth factor. If None, it is calculated natively in JAX from the input parameters.
-    linear_pmm_emu: TransferFunctionEmulator, optional
-        The linear matter power spectrum emulator. If None, loads the default built-in emulator.
-    linear_pcb_emu: TransferFunctionEmulator, optional
-        The linear cb (baryons + CDM) power spectrum emulator. If None, loads the default built-in emulator.
+    linear_pmm_emu: TransferFunctionEmulator, required
+        The linear total-matter power spectrum emulator.
+    linear_pcb_emu: TransferFunctionEmulator, required
+        The linear cold+baryon (cb) power spectrum emulator.
     T_AGN: float, optional
         Baryon feedback temperature in Kelvin. The conventional feedback value
         is ``10.0**7.8`` K. If None, uses Dark Matter Only (DMO).
     nM: int, optional
         Number of mass integration steps (default: 128).
     k_out: Array, optional
-        Custom physical wavenumbers (Mpc^-1) for output. If None, uses the emulator's k grid.
+        Custom output wavenumbers in **physical** units (Mpc^-1), not h-units.
+        If None, uses the emulator's native k grid (also physical). The function
+        converts to h-units internally for the HMCode kernel.
     kwargs:
         Cosmological parameters can also be passed directly as keyword arguments.
 
@@ -659,14 +703,6 @@ def hmcode_pmm_from_emulator(
             wa=params[7],
         )
         D = growth_cosmology.D_z(z_arr)
-
-    # Load emulators if not provided
-    if linear_pmm_emu is None or linear_pcb_emu is None:
-        emus = load_trained_emulators()[DEFAULT_EMULATOR_ARTIFACT]
-        if linear_pmm_emu is None:
-            linear_pmm_emu = emus["pmm"]
-        if linear_pcb_emu is None:
-            linear_pcb_emu = emus["pcb"]
 
     k_support = linear_pmm_emu.k_grid
     if k_out is None:
@@ -743,12 +779,14 @@ def hmcode_pmm_from_emulator_fast(
     z_coarse: Optional[Array] = None,
     z_fine: Optional[Union[float, Array]] = None,
     N_z_coarse: int = 50,
+    *,
+    linear_pmm_emu: TransferFunctionEmulator,
+    linear_pcb_emu: TransferFunctionEmulator,
     D: Optional[Union[float, Array]] = None,
-    linear_pmm_emu: Optional[TransferFunctionEmulator] = None,
-    linear_pcb_emu: Optional[TransferFunctionEmulator] = None,
     T_AGN: Optional[float] = None,
     nM: int = 128,
     k_out: Optional[Array] = None,
+    piecewise_z_feature: Optional[float] = None,
     **kwargs,
 ) -> tuple[Array, Array]:
     """
@@ -783,6 +821,7 @@ def hmcode_pmm_from_emulator_fast(
         - This avoids running the linear/transfer emulators on the dense fine redshift grid.
     """
     from jaxace.utils import akima_interpolation
+    from .hmcode import piecewise_akima_interpolation
 
     if N_z_coarse < 5:
         raise ValueError("N_z_coarse must be at least 5 for Akima interpolation.")
@@ -860,8 +899,13 @@ def hmcode_pmm_from_emulator_fast(
         **kwargs,
     )
 
-    # Akima interpolate back to the fine z grid
-    pk_nl_fine = akima_interpolation(pk_nl_coarse, _z_coarse, _z_fine)
+    # Optionally split the interpolation at a known baryonic feature.
+    if piecewise_z_feature is None:
+        pk_nl_fine = akima_interpolation(pk_nl_coarse, _z_coarse, _z_fine)
+    else:
+        pk_nl_fine = piecewise_akima_interpolation(
+            pk_nl_coarse, _z_coarse, _z_fine, float(piecewise_z_feature)
+        )
 
     # Restore original scalar/vector shape
     pk_nl = pk_nl_fine[0] if is_scalar else pk_nl_fine
@@ -870,3 +914,131 @@ def hmcode_pmm_from_emulator_fast(
 
 
 get_hmcode_pmm_fast = hmcode_pmm_from_emulator_fast
+
+
+def predict_baryonic_discontinuity(
+    input_params: Optional[Union[Array, dict]] = None,
+    T_AGN: float = 10.0**7.8,
+    **kwargs,
+) -> float:
+    """Predict the baryonic feedback threshold/feature redshift z_discontinuity."""
+    params = _parse_params(input_params, kwargs)
+    h = jnp.where(params[2] > 10.0, params[2] / 100.0, params[2])
+    logT_AGN = jnp.log10(T_AGN)
+    sbar = -0.0030 * (logT_AGN - 7.8) + 0.0201
+    sbarz = 0.0224 * (logT_AGN - 7.8) + 0.409
+    omega_b = params[3] / h**2
+    omega_c = params[4] / h**2
+    omega_nu = (params[5] / 93.14) / h**2
+    omega_m = omega_b + omega_c + omega_nu
+    return float((jnp.log10(omega_b / omega_m) - jnp.log10(sbar)) / sbarz)
+
+
+def build_smart_coarse_grid(
+    z_min: float,
+    z_max: float,
+    N_coarse: int,
+    z_feature: Optional[float] = None,
+    min_spacing: float = 1e-4,
+) -> Array:
+    """Construct a coarse redshift grid of length N_coarse, placing N_coarse - 1 uniform nodes and inserting z_feature if within (z_min, z_max)."""
+    if N_coarse < 5:
+        raise ValueError("N_coarse must be at least 5 for Akima interpolation.")
+    z_min = float(z_min)
+    z_max = float(z_max)
+
+    if z_min >= z_max:
+        return jnp.array([z_min])
+
+    if z_feature is not None and (z_min + min_spacing) < z_feature < (z_max - min_spacing):
+        grid_base = np.linspace(z_min, z_max, N_coarse - 1)
+        dists = np.abs(grid_base - z_feature)
+        if np.min(dists) < min_spacing:
+            return jnp.linspace(z_min, z_max, N_coarse)
+        smart_grid = np.sort(np.append(grid_base, z_feature))
+        return jnp.asarray(smart_grid)
+    else:
+        return jnp.linspace(z_min, z_max, N_coarse)
+
+
+def hmcode_pmm_baryonic_smart(
+    input_params: Optional[Union[Array, dict]] = None,
+    z_fine: Optional[Union[float, Array]] = None,
+    N_coarse: int = 50,
+    T_AGN: float = 10.0**7.8,
+    *,
+    linear_pmm_emu: TransferFunctionEmulator,
+    linear_pcb_emu: TransferFunctionEmulator,
+    nM: int = 128,
+    k_out: Optional[Array] = None,
+    **kwargs,
+) -> tuple[Array, Array]:
+    """
+    Evaluate baryonic HMCode2020 non-linear matter power spectrum using an ergonomically
+    constructed smart coarse redshift grid that explicitly places a node at the baryonic feature redshift.
+
+    Parameters:
+    -----------
+    input_params: Array or dict, optional
+        Cosmological parameters.
+    z_fine: float or Array, optional
+        Target fine redshift grid (or single redshift) for output.
+    N_coarse: int, optional
+        Total number of coarse grid points (default: 50).
+    T_AGN: float, optional
+        Baryon feedback temperature in Kelvin (default: 10^7.8 K).
+    """
+    if z_fine is None:
+        raise ValueError("Missing required parameter 'z_fine'.")
+
+    z_arr = jnp.atleast_1d(z_fine)
+    is_scalar = jnp.ndim(z_fine) == 0 or z_arr.shape[0] == 1
+
+    if is_scalar or z_arr.shape[0] <= N_coarse or z_arr.shape[0] < 5:
+        return hmcode_pmm_from_emulator(
+            input_params=input_params,
+            z=z_fine,
+            linear_pmm_emu=linear_pmm_emu,
+            linear_pcb_emu=linear_pcb_emu,
+            T_AGN=T_AGN,
+            nM=nM,
+            k_out=k_out,
+            **kwargs,
+        )
+
+    z_min, z_max = float(jnp.min(z_arr)), float(jnp.max(z_arr))
+    if z_min >= z_max:
+        return hmcode_pmm_from_emulator(
+            input_params=input_params,
+            z=z_fine,
+            linear_pmm_emu=linear_pmm_emu,
+            linear_pcb_emu=linear_pcb_emu,
+            T_AGN=T_AGN,
+            nM=nM,
+            k_out=k_out,
+            **kwargs,
+        )
+
+    # Predict feature point
+    z_feature = predict_baryonic_discontinuity(input_params=input_params, T_AGN=T_AGN, **kwargs)
+
+    # Build smart coarse grid
+    z_coarse = build_smart_coarse_grid(z_min, z_max, N_coarse, z_feature=z_feature)
+
+    # Run coarse evaluation + Akima interpolation onto z_fine
+    return hmcode_pmm_from_emulator_fast(
+        input_params=input_params,
+        z_coarse=z_coarse,
+        z_fine=z_fine,
+        linear_pmm_emu=linear_pmm_emu,
+        linear_pcb_emu=linear_pcb_emu,
+        T_AGN=T_AGN,
+        nM=nM,
+        k_out=k_out,
+        piecewise_z_feature=z_feature,
+        **kwargs,
+    )
+
+
+
+get_hmcode_pmm_baryonic_smart = hmcode_pmm_baryonic_smart

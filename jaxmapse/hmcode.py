@@ -957,6 +957,58 @@ def hmcode_boost(
     return boost
 
 
+def hmcode_pmm_physical(
+    cosmo: HMCodeCosmology,
+    z: Array,
+    k: Array,
+    pk_mm_z: Array,
+    pk_cb_z: Optional[Array] = None,
+    *,
+    k_support: Optional[Array] = None,
+    pk_cb_support_z: Optional[Array] = None,
+    T_AGN: float = 10.0**7.8,
+    Mmin: float = 1.0,
+    Mmax: float = 1.0e18,
+    nM: int = 128,
+) -> Array:
+    """Evaluate HMCode with physical-unit inputs and return physical ``P(k,z)``.
+
+    Public unit contract: ``k`` and ``k_support`` are in Mpc⁻¹, while all
+    spectra are in Mpc³. The internal HMCode kernel remains in h-units.
+    """
+    h = cosmo.h
+    k_phys = jnp.asarray(k)
+    k_support_phys = k_phys if k_support is None else jnp.asarray(k_support)
+    pk_mm_phys = jnp.asarray(pk_mm_z)
+    pk_cb_phys = pk_mm_phys if pk_cb_z is None else jnp.asarray(pk_cb_z)
+    return hmcode_pmm_jax(
+        cosmo, jnp.asarray(z), k_phys / h, k_support_phys / h,
+        pk_mm_phys * h**3, pk_cb_phys * h**3,
+        T_AGN=T_AGN, Mmin=Mmin, Mmax=Mmax, nM=nM,
+        include_feedback=True,
+    ) / h**3
+
+
+def hmcode_pmm_fast_physical(
+    cosmo: HMCodeCosmology, z_coarse: Array, z_fine: Array, k: Array,
+    pk_mm_coarse: Array, pk_cb_coarse: Optional[Array] = None, *,
+    k_support: Optional[Array] = None, pk_cb_support_coarse: Optional[Array] = None,
+    T_AGN: float = 10.0**7.8, Mmin: float = 1.0, Mmax: float = 1.0e18,
+    nM: int = 128,
+) -> Array:
+    """Physical-unit boundary for the coarse-redshift HMCode path."""
+    h = cosmo.h
+    k_phys_support = jnp.asarray(k if k_support is None else k_support)
+    pk_cb = pk_cb_support_coarse if pk_cb_support_coarse is not None else pk_cb_coarse
+    pk_cb = pk_mm_coarse if pk_cb is None else pk_cb
+    return hmcode_pmm_fast(
+        cosmo, z_coarse, z_fine, jnp.asarray(k) / h,
+        jnp.asarray(pk_mm_coarse) * h**3,
+        pk_cb_coarse=jnp.asarray(pk_cb) * h**3,
+        k_support=k_phys_support / h, T_AGN=T_AGN, Mmin=Mmin, Mmax=Mmax, nM=nM,
+    ) / h**3
+
+
 hmcode_Pmm = hmcode_pmm
 hmcode_Pmm_jax = hmcode_pmm_jax
 
@@ -1087,6 +1139,81 @@ def hmcode_pmm_fast(
     )
 
     return akima_interpolation(Pk_nl_coarse, z_coarse, z_fine)
+
+
+def piecewise_akima_interpolation(values: Array, z_coarse: Array, z_fine: Array, z_split: float) -> Array:
+    """Interpolate values with independent Akima splines on two z intervals."""
+    from jaxace.utils import akima_interpolation
+
+    zc = np.asarray(z_coarse)
+    zf = np.asarray(z_fine)
+    left = np.flatnonzero(zc <= z_split)
+    right = np.flatnonzero(zc >= z_split)
+    if len(left) < 5 or len(right) < 5:
+        raise ValueError("Each two-spline segment requires at least five coarse nodes.")
+    left_fine = np.flatnonzero(zf <= z_split)
+    right_fine = np.flatnonzero(zf > z_split)
+    out = jnp.empty((len(zf), values.shape[1]), dtype=values.dtype)
+    if len(left_fine):
+        out = out.at[left_fine].set(
+            akima_interpolation(values[left], jnp.asarray(zc[left]), jnp.asarray(zf[left_fine]))
+        )
+    if len(right_fine):
+        out = out.at[right_fine].set(
+            akima_interpolation(values[right], jnp.asarray(zc[right]), jnp.asarray(zf[right_fine]))
+        )
+    return out
+
+
+def hmcode_pmm_fast_two_splines(
+    cosmo: HMCodeCosmology,
+    z_coarse: Array,
+    z_fine: Array,
+    k: Array,
+    pk_mm_coarse: Array,
+    pk_cb_coarse: Optional[Array] = None,
+    *,
+    z_split: float,
+    k_support: Optional[Array] = None,
+    pk_cb_support_coarse: Optional[Array] = None,
+    T_AGN: Optional[float] = 10.0**7.8,
+    Mmin: float = 1.0,
+    Mmax: float = 1.0e18,
+    nM: int = 128,
+) -> Array:
+    """Experimental fast HMCode path with independent splines on each z side.
+
+    HMCode is evaluated once on ``z_coarse``. The resulting ``P(k,z)`` is then
+    interpolated independently on ``z <= z_split`` and ``z >= z_split``. This
+    prevents one interpolant from smoothing across a known baryonic feature.
+    The split point must be present in the coarse grid and each side must have
+    at least five nodes for Akima interpolation.
+    """
+    zc = np.asarray(z_coarse)
+    zf = np.asarray(z_fine)
+    if zc.ndim != 1 or zf.ndim != 1:
+        raise ValueError("Two-spline interpolation requires one-dimensional z grids.")
+    if not (zc[0] <= z_split <= zc[-1]):
+        raise ValueError("z_split must lie within z_coarse.")
+    left = np.flatnonzero(zc <= z_split)
+    right = np.flatnonzero(zc >= z_split)
+    if len(left) < 5 or len(right) < 5:
+        raise ValueError("Each two-spline segment requires at least five coarse nodes.")
+
+    Pk_nl_coarse = hmcode_pmm_jax(
+        _normalize_cosmo(cosmo),
+        jnp.asarray(z_coarse),
+        jnp.asarray(k),
+        jnp.asarray(k if k_support is None else k_support),
+        jnp.asarray(pk_mm_coarse),
+        jnp.asarray(pk_mm_coarse if pk_cb_coarse is None else pk_cb_coarse),
+        T_AGN=10.0**7.8 if T_AGN is None else float(T_AGN),
+        Mmin=float(Mmin),
+        Mmax=float(Mmax),
+        nM=_hmcode_mass_steps(nM),
+        include_feedback=T_AGN is not None,
+    )
+    return piecewise_akima_interpolation(Pk_nl_coarse, zc, zf, z_split)
 
 
 def hmcode_boost_fast(
