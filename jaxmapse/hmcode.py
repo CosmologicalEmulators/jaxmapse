@@ -357,11 +357,7 @@ def _gaussian_filter1d_reflect_jax(y, sigma, truncate=4.0):
     return jnp.sum(y[idx] * weights[None, :], axis=1)
 
 
-def _pk_wiggle_jax(k, pk_lin, h, omega_m_h2, omega_b_h2, n_s):
-    dlnk = jnp.log(k[1] / k[0])
-    sigma = 0.25 / dlnk
-    tk_nw = _tk_eh_nowiggle(k, h, omega_m_h2, omega_b_h2)
-    pk_nw = k**n_s * tk_nw**2
+def _pk_wiggle_jax(pk_lin, pk_nw, sigma):
     ratio = pk_lin / pk_nw
     smooth = _gaussian_filter1d_reflect_jax(ratio, sigma)
     return pk_lin - smooth * pk_nw
@@ -695,6 +691,7 @@ def _assemble_pass_jax(
     g_ac = jnp.interp(ac, a_grid, growth)
     g_lcdm_ac = jnp.interp(ac, a_grid, growth_lcdm)
     logR = jnp.log(R)
+    log_rc = jnp.log(_lagrangian_radius(0.01 * M, om_m))
 
     def one_z(
         zz,
@@ -716,8 +713,7 @@ def _assemble_pass_jax(
         a_obs = _scale_factor(zz)
         g_obs = jnp.interp(a_obs, a_grid, growth)
         dolag = (g_ac / g_lcdm_ac) * (jnp.interp(a_obs, a_grid, growth_lcdm) / g_obs)
-        rc = _lagrangian_radius(0.01 * M, om_m)
-        sig_rc = jnp.exp(jnp.interp(jnp.log(rc), logR, jnp.log(sigma_m)))
+        sig_rc = jnp.exp(jnp.interp(log_rc, logR, jnp.log(sigma_m)))
         g_target = g_obs * dc / sig_rc
         af = jnp.interp(g_target, growth, a_grid)
         zf = jnp.where(g_target >= g_obs, zz, _redshift(af))
@@ -808,8 +804,14 @@ def hmcode_pmm_jax(
 
     omh2 = cosmo.Omega_m * cosmo.h**2
     obh2 = cosmo.Omega_b * cosmo.h**2
+    
+    tk_nw = _tk_eh_nowiggle(k, cosmo.h, omh2, obh2)
+    pk_nw = k**cosmo.n_s * tk_nw**2
+    dlnk = jnp.log(k[1] / k[0])
+    sigma_wig = 0.25 / dlnk
+    
     pk_wig = jax.vmap(
-        lambda row: _pk_wiggle_jax(k, row, cosmo.h, omh2, obh2, cosmo.n_s)
+        lambda row: _pk_wiggle_jax(row, pk_nw, sigma_wig)
     )(pk_mm_out)
     base = _assemble_pass_jax(
         k,
