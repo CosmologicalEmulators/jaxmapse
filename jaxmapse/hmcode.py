@@ -611,11 +611,11 @@ R_G_ASYM_DEN = (
 )
 
 
-def _si_fast(x):
-    small = x * _evalpoly(x * x, SI_SMALL)
+def _sici_fast(x):
     t = x * x
     invt = 1.0 / t
     sx, cx = jnp.sin(x), jnp.cos(x)
+    
     f_rat = (_evalpoly(invt, P_F_RAT1) / _evalpoly(invt, Q_F_RAT1)) / x
     g_rat = (_evalpoly(invt, R_G_RAT1) / _evalpoly(invt, S_G_RAT1)) * invt
     f_asym = (
@@ -624,36 +624,29 @@ def _si_fast(x):
     g_asym = (
         1.0 - _evalpoly(invt, R_G_ASYM_NUM) * invt / _evalpoly(invt, R_G_ASYM_DEN)
     ) * invt
+    
     f = jnp.where(t <= 144.0, f_rat, f_asym)
     g = jnp.where(t <= 144.0, g_rat, g_asym)
-    large = jnp.pi / 2.0 - f * cx - g * sx
-    return jnp.where(x <= 4.0, small, large)
-
-
-def _ci_fast(x):
-    small = EULER_GAMMA + jnp.log(x) + x * x * _evalpoly(x * x, CI_INT_SMALL)
-    t = x * x
-    invt = 1.0 / t
-    sx, cx = jnp.sin(x), jnp.cos(x)
-    f_rat = (_evalpoly(invt, P_F_RAT1) / _evalpoly(invt, Q_F_RAT1)) / x
-    g_rat = (_evalpoly(invt, R_G_RAT1) / _evalpoly(invt, S_G_RAT1)) * invt
-    f_asym = (
-        1.0 - _evalpoly(invt, P_F_ASYM_NUM) * invt / _evalpoly(invt, P_F_ASYM_DEN)
-    ) / x
-    g_asym = (
-        1.0 - _evalpoly(invt, R_G_ASYM_NUM) * invt / _evalpoly(invt, R_G_ASYM_DEN)
-    ) * invt
-    f = jnp.where(t <= 144.0, f_rat, f_asym)
-    g = jnp.where(t <= 144.0, g_rat, g_asym)
-    large = f * sx - g * cx
-    return jnp.where(x <= 4.0, small, large)
+    
+    si_large = jnp.pi / 2.0 - f * cx - g * sx
+    ci_large = f * sx - g * cx
+    
+    si_small = x * _evalpoly(t, SI_SMALL)
+    ci_small = EULER_GAMMA + jnp.log(x) + t * _evalpoly(t, CI_INT_SMALL)
+    
+    is_small = x <= 4.0
+    si = jnp.where(is_small, si_small, si_large)
+    ci = jnp.where(is_small, ci_small, ci_large)
+    return si, ci
 
 
 def _wnfw_fast_jax(x, c, ln1pc):
     x_plus = x * (1.0 + 1.0 / c)
     x_minus = x / c
-    dsi = _si_fast(x_plus) - _si_fast(x_minus)
-    dci = _ci_fast(x_plus) - _ci_fast(x_minus)
+    si_plus, ci_plus = _sici_fast(x_plus)
+    si_minus, ci_minus = _sici_fast(x_minus)
+    dsi = si_plus - si_minus
+    dci = ci_plus - ci_minus
     sinc_xp = jnp.sin(x) / x_plus
     norm = ln1pc - c / (1.0 + c)
     return (dsi * jnp.sin(x_minus) + dci * jnp.cos(x_minus) - sinc_xp) / norm
