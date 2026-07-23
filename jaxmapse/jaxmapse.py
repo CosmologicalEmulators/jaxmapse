@@ -931,7 +931,7 @@ def predict_baryonic_discontinuity(
     omega_c = params[4] / h**2
     omega_nu = (params[5] / 93.14) / h**2
     omega_m = omega_b + omega_c + omega_nu
-    return float((jnp.log10(omega_b / omega_m) - jnp.log10(sbar)) / sbarz)
+    return (jnp.log10(omega_b / omega_m) - jnp.log10(sbar)) / sbarz
 
 
 def build_smart_coarse_grid(
@@ -1006,18 +1006,7 @@ def hmcode_pmm_baryonic_smart(
             **kwargs,
         )
 
-    z_min, z_max = float(jnp.min(z_arr)), float(jnp.max(z_arr))
-    if z_min >= z_max:
-        return hmcode_pmm_from_emulator(
-            input_params=input_params,
-            z=z_fine,
-            linear_pmm_emu=linear_pmm_emu,
-            linear_pcb_emu=linear_pcb_emu,
-            T_AGN=T_AGN,
-            nM=nM,
-            k_out=k_out,
-            **kwargs,
-        )
+    z_min, z_max = jnp.min(z_arr), jnp.max(z_arr)
 
     # Predict feature point
     z_feature = predict_baryonic_discontinuity(input_params=input_params, T_AGN=T_AGN, **kwargs)
@@ -1042,3 +1031,65 @@ def hmcode_pmm_baryonic_smart(
 
 
 get_hmcode_pmm_baryonic_smart = hmcode_pmm_baryonic_smart
+
+def hmcode_pmm_dmo_smart(
+    input_params: Optional[Union[Array, dict]] = None,
+    z_fine: Optional[Union[float, Array]] = None,
+    N_coarse: int = 50,
+    *,
+    linear_pmm_emu: TransferFunctionEmulator,
+    linear_pcb_emu: TransferFunctionEmulator,
+    nM: int = 128,
+    k_out: Optional[Array] = None,
+    **kwargs,
+) -> tuple[Array, Array]:
+    """
+    Evaluate dark matter only HMCode2020 non-linear matter power spectrum using an ergonomically
+    constructed smart coarse redshift grid.
+
+    Parameters:
+    -----------
+    input_params: Array or dict, optional
+        Cosmological parameters.
+    z_fine: float or Array, optional
+        Target fine redshift grid (or single redshift) for output.
+    N_coarse: int, optional
+        Total number of coarse grid points (default: 50).
+    """
+    if z_fine is None:
+        raise ValueError("Missing required parameter 'z_fine'.")
+
+    z_arr = jnp.atleast_1d(z_fine)
+    is_scalar = jnp.ndim(z_fine) == 0 or z_arr.shape[0] == 1
+
+    if is_scalar or z_arr.shape[0] <= N_coarse or z_arr.shape[0] < 5:
+        return hmcode_pmm_from_emulator(
+            input_params=input_params,
+            z=z_fine,
+            linear_pmm_emu=linear_pmm_emu,
+            linear_pcb_emu=linear_pcb_emu,
+            T_AGN=None,
+            nM=nM,
+            k_out=k_out,
+            **kwargs,
+        )
+
+    z_min, z_max = jnp.min(z_arr), jnp.max(z_arr)
+
+    # Build smart coarse grid (linear for DMO)
+    z_coarse = jnp.linspace(z_min, z_max, N_coarse)
+
+    # Run coarse evaluation + Akima interpolation onto z_fine
+    return hmcode_pmm_from_emulator_fast(
+        input_params=input_params,
+        z_coarse=z_coarse,
+        z_fine=z_fine,
+        linear_pmm_emu=linear_pmm_emu,
+        linear_pcb_emu=linear_pcb_emu,
+        T_AGN=None,
+        nM=nM,
+        k_out=k_out,
+        piecewise_z_feature=None,
+        **kwargs,
+    )
+
