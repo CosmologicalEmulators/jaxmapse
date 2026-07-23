@@ -20,33 +20,8 @@ import jax.numpy as jnp
 import numpy as np
 from jaxtyping import Array
 
-try:
-    from jax.tree_util import register_pytree_node
-    from jaxace.background import w0waCDMCosmology
-
-    try:
-        register_pytree_node(
-            w0waCDMCosmology,
-            lambda x: (
-                (
-                    x.ln10As,
-                    x.ns,
-                    x.h,
-                    x.omega_b,
-                    x.omega_c,
-                    x.omega_k,
-                    x.m_nu,
-                    x.w0,
-                    x.wa,
-                ),
-                None,
-            ),
-            lambda aux_data, children: w0waCDMCosmology(*children),
-        )
-    except ValueError:
-        pass
-except ImportError:
-    pass
+# w0waCDMCosmology pytree registration lives in __init__.py to avoid
+# duplicate registration on import.
 
 RHO_CRITICAL = 2.77536627245708e11  # Msun/h / (Mpc/h)^3
 DV0 = 18.0 * math.pi**2
@@ -1007,10 +982,6 @@ def hmcode_pmm_fast_physical(
         pk_cb_coarse=jnp.asarray(pk_cb) * h**3,
         k_support=k_phys_support / h, T_AGN=T_AGN, Mmin=Mmin, Mmax=Mmax, nM=nM,
     ) / h**3
-
-
-hmcode_Pmm = hmcode_pmm
-hmcode_Pmm_jax = hmcode_pmm_jax
 
 
 def _validate_concrete_z(z_coarse: Array, z_fine: Array):

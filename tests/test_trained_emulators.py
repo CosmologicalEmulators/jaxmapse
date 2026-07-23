@@ -174,7 +174,7 @@ def test_default_artifact_halofit_scalar_z(default_emulator):
     pmm, _ = default_emulator
     z = 0.0
 
-    k_halofit, pk_halofit = jaxmapse.get_halofit_pmm(
+    k_halofit, pk_halofit = jaxmapse.halofit_pmm_from_emulator(
         DEFAULT_PARAMS, z, linear_pmm_emu=pmm
     )
 
@@ -188,7 +188,7 @@ def test_default_artifact_halofit_vector_z(default_emulator):
     pmm, _ = default_emulator
     z = jnp.array([0.0, 0.5, 1.0])
 
-    k_halofit, pk_halofit = jaxmapse.get_halofit_pmm(
+    k_halofit, pk_halofit = jaxmapse.halofit_pmm_from_emulator(
         DEFAULT_PARAMS, z, linear_pmm_emu=pmm
     )
 

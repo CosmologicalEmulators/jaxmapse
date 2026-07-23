@@ -410,5 +410,4 @@ def halofit_pmm_from_params(
     return halofit_pmm(cosmology, z, k, pk_lin_mm_z, omega_m_z, omega_v_z)
 
 
-# Compatibility alias matching the Julia/Mapse.jl spelling.
-halofit_Pmm = halofit_pmm
+
