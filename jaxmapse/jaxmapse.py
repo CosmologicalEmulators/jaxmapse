@@ -754,6 +754,7 @@ def hmcode_pmm_from_emulator_fast(
     nM: int = 128,
     k_out: Optional[Array] = None,
     piecewise_z_feature: Optional[float] = None,
+    piecewise_split_index: Optional[int] = None,
     **kwargs,
 ) -> tuple[Array, Array]:
     """
@@ -871,7 +872,11 @@ def hmcode_pmm_from_emulator_fast(
         pk_nl_fine = akima_interpolation(pk_nl_coarse, _z_coarse, _z_fine)
     else:
         pk_nl_fine = piecewise_akima_interpolation(
-            pk_nl_coarse, _z_coarse, _z_fine, float(piecewise_z_feature)
+            pk_nl_coarse,
+            _z_coarse,
+            _z_fine,
+            piecewise_z_feature,
+            split_index=piecewise_split_index,
         )
 
     # Restore original scalar/vector shape
@@ -904,25 +909,43 @@ def build_smart_coarse_grid(
     N_coarse: int,
     z_feature: Optional[float] = None,
     min_spacing: float = 1e-4,
+    N_left: Optional[int] = None,
 ) -> Array:
-    """Construct a coarse redshift grid of length N_coarse, placing N_coarse - 1 uniform nodes and inserting z_feature if within (z_min, z_max)."""
+    """Construct a fixed-shape coarse grid with an optional shared feature node."""
     if N_coarse < 5:
         raise ValueError("N_coarse must be at least 5 for Akima interpolation.")
-    z_min = float(z_min)
-    z_max = float(z_max)
-
-    if z_min >= z_max:
-        return jnp.array([z_min])
-
-    if z_feature is not None and (z_min + min_spacing) < z_feature < (z_max - min_spacing):
-        grid_base = np.linspace(z_min, z_max, N_coarse - 1)
-        dists = np.abs(grid_base - z_feature)
-        if np.min(dists) < min_spacing:
-            return jnp.linspace(z_min, z_max, N_coarse)
-        smart_grid = np.sort(np.append(grid_base, z_feature))
-        return jnp.asarray(smart_grid)
-    else:
+    if z_feature is None:
         return jnp.linspace(z_min, z_max, N_coarse)
+
+    if N_left is None:
+        N_left = _baryonic_left_nodes(N_coarse)
+    N_right = N_coarse - N_left + 1
+    if N_left < 5 or N_right < 5:
+        raise ValueError("Each baryonic coarse-grid segment requires at least 5 nodes.")
+
+    z_feature = _clip_baryonic_feature(z_min, z_max, z_feature, min_spacing)
+    z_min = jnp.asarray(z_min)
+    z_max = jnp.asarray(z_max)
+
+    z_left = jnp.linspace(z_min, z_feature, N_left)
+    z_right = jnp.linspace(z_feature, z_max, N_right)
+    return jnp.concatenate((z_left, z_right[1:]))
+
+
+def _baryonic_left_nodes(N_coarse: int) -> int:
+    return int(round((N_coarse - 1) * 5.0 / 8.0)) + 1
+
+
+def _clip_baryonic_feature(z_min, z_max, z_feature, min_spacing):
+    z_min = jnp.asarray(z_min)
+    z_max = jnp.asarray(z_max)
+    z_feature = jnp.asarray(z_feature)
+    dtype = jnp.result_type(z_min, z_max, z_feature)
+    margin = jnp.maximum(
+        jnp.asarray(min_spacing, dtype=dtype),
+        jnp.asarray(0.05, dtype=dtype) * (z_max - z_min),
+    )
+    return jnp.clip(z_feature, z_min + margin, z_max - margin)
 
 
 def hmcode_pmm_baryonic_smart(
@@ -975,8 +998,15 @@ def hmcode_pmm_baryonic_smart(
     # Predict feature point
     z_feature = predict_baryonic_discontinuity(input_params=input_params, T_AGN=T_AGN, **kwargs)
 
-    # Build smart coarse grid
-    z_coarse = build_smart_coarse_grid(z_min, z_max, N_coarse, z_feature=z_feature)
+    z_feature = _clip_baryonic_feature(z_min, z_max, z_feature, 1.0e-4)
+    n_left = _baryonic_left_nodes(N_coarse)
+    z_coarse = build_smart_coarse_grid(
+        z_min,
+        z_max,
+        N_coarse,
+        z_feature=z_feature,
+        N_left=n_left,
+    )
 
     # Run coarse evaluation + Akima interpolation onto z_fine
     return hmcode_pmm_from_emulator_fast(
@@ -989,6 +1019,7 @@ def hmcode_pmm_baryonic_smart(
         nM=nM,
         k_out=k_out,
         piecewise_z_feature=z_feature,
+        piecewise_split_index=n_left,
         **kwargs,
     )
 

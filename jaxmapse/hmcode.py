@@ -1112,28 +1112,46 @@ def hmcode_pmm_fast(
     return akima_interpolation(Pk_nl_coarse, z_coarse, z_fine)
 
 
-def piecewise_akima_interpolation(values: Array, z_coarse: Array, z_fine: Array, z_split: float) -> Array:
-    """Interpolate values with independent Akima splines on two z intervals."""
+def piecewise_akima_interpolation(
+    values: Array,
+    z_coarse: Array,
+    z_fine: Array,
+    z_split: float,
+    *,
+    split_index: Optional[int] = None,
+) -> Array:
+    """Interpolate with fixed-size independent Akima splines on two intervals."""
     from jaxace.utils import akima_interpolation
 
-    zc = np.asarray(z_coarse)
-    zf = np.asarray(z_fine)
-    left = np.flatnonzero(zc <= z_split)
-    right = np.flatnonzero(zc >= z_split)
-    if len(left) < 5 or len(right) < 5:
+    if split_index is None:
+        if isinstance(z_coarse, jax.core.Tracer) or isinstance(z_split, jax.core.Tracer):
+            raise ValueError("split_index is required when tracing piecewise interpolation.")
+        split_index = int(np.count_nonzero(np.asarray(z_coarse) <= float(z_split)))
+
+    n_right = len(z_coarse) - split_index + 1
+    if split_index < 5 or n_right < 5:
         raise ValueError("Each two-spline segment requires at least five coarse nodes.")
-    left_fine = np.flatnonzero(zf <= z_split)
-    right_fine = np.flatnonzero(zf > z_split)
-    out = jnp.empty((len(zf), values.shape[1]), dtype=values.dtype)
-    if len(left_fine):
-        out = out.at[left_fine].set(
-            akima_interpolation(values[left], jnp.asarray(zc[left]), jnp.asarray(zf[left_fine]))
-        )
-    if len(right_fine):
-        out = out.at[right_fine].set(
-            akima_interpolation(values[right], jnp.asarray(zc[right]), jnp.asarray(zf[right_fine]))
-        )
-    return out
+
+    values = jnp.asarray(values)
+    z_coarse = jnp.asarray(z_coarse)
+    z_fine = jnp.atleast_1d(z_fine)
+    z_split = jnp.asarray(z_split)
+
+    z_left = z_coarse[:split_index]
+    z_right = z_coarse[split_index - 1 :]
+    values_left = values[:split_index]
+    values_right = values[split_index - 1 :]
+
+    prediction_left = akima_interpolation(
+        values_left, z_left, jnp.minimum(z_fine, z_split)
+    )
+    prediction_right = akima_interpolation(
+        values_right, z_right, jnp.maximum(z_fine, z_split)
+    )
+    use_left = z_fine <= z_split
+    if prediction_left.ndim > 1:
+        use_left = use_left[:, None]
+    return jnp.where(use_left, prediction_left, prediction_right)
 
 
 def hmcode_pmm_fast_two_splines(
