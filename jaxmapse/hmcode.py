@@ -1171,13 +1171,43 @@ def hmcode_pmm_fast_two_splines(
     if len(left) < 5 or len(right) < 5:
         raise ValueError("Each two-spline segment requires at least five coarse nodes.")
 
+    cosmo = _normalize_cosmo(cosmo)
+    z_coarse = jnp.asarray(z_coarse)
+    k = jnp.asarray(k)
+    k_sup = k if k_support is None else jnp.asarray(k_support)
+
+    pk_mm = jnp.asarray(pk_mm_coarse)
+    if pk_mm.ndim == 1:
+        pk_mm = pk_mm[None, :]
+
+    if pk_cb_support_coarse is not None and pk_cb_coarse is not None:
+        raise ValueError("Pass either pk_cb_coarse or pk_cb_support_coarse, not both.")
+    pk_cb = pk_cb_support_coarse if pk_cb_support_coarse is not None else pk_cb_coarse
+    pk_cb = pk_mm if pk_cb is None else jnp.asarray(pk_cb)
+    if pk_cb.ndim == 1:
+        pk_cb = pk_cb[None, :]
+
+    _validate_concrete_z(z_coarse, zf)
+    if not (
+        isinstance(z_coarse, jax.core.Tracer)
+        or isinstance(pk_mm, jax.core.Tracer)
+        or isinstance(pk_cb, jax.core.Tracer)
+    ):
+        _validate_inputs(
+            np.asarray(z_coarse),
+            np.asarray(k),
+            np.asarray(k_sup),
+            np.asarray(pk_mm),
+            np.asarray(pk_cb),
+        )
+
     Pk_nl_coarse = hmcode_pmm_jax(
-        _normalize_cosmo(cosmo),
-        jnp.asarray(z_coarse),
-        jnp.asarray(k),
-        jnp.asarray(k if k_support is None else k_support),
-        jnp.asarray(pk_mm_coarse),
-        jnp.asarray(pk_mm_coarse if pk_cb_coarse is None else pk_cb_coarse),
+        cosmo,
+        z_coarse,
+        k,
+        k_sup,
+        pk_mm,
+        pk_cb,
         T_AGN=10.0**7.8 if T_AGN is None else float(T_AGN),
         Mmin=float(Mmin),
         Mmax=float(Mmax),

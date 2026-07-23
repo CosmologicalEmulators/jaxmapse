@@ -11,7 +11,9 @@ from jaxmapse import (
     hmcode_boost_fast,
     hmcode_pmm,
     hmcode_pmm_fast,
+    hmcode_pmm_fast_two_splines,
     hmcode_pmm_jax,
+    piecewise_akima_interpolation,
 )
 
 
@@ -395,6 +397,86 @@ def test_hmcode_fast_apis_validation_and_correctness():
         hmcode_pmm_fast(
             cosmo, z_coarse[::-1], z_fine, k, pk_mm_coarse[::-1], pk_cb_coarse[::-1]
         )
+
+
+def test_hmcode_two_splines_uses_and_validates_cb_support_spectrum():
+    cosmo, _, k_support, _, _, _, _ = _reference_case()
+    z_coarse = jnp.linspace(0.0, 1.0, 11)
+    z_fine = jnp.linspace(0.0, 1.0, 21)
+    z_split = 0.5
+    k_out = k_support[::2]
+
+    redshift_scaling = 1.0 / (1.0 + z_coarse[:, None]) ** 2
+    pk_mm_support = 2.0e4 * redshift_scaling / (1.0 + k_support[None, :]) ** 2
+    pk_cb_support = pk_mm_support * (0.7 + 0.2 / (1.0 + k_support[None, :]))
+
+    actual = hmcode_pmm_fast_two_splines(
+        cosmo,
+        z_coarse,
+        z_fine,
+        k_out,
+        pk_mm_support,
+        z_split=z_split,
+        k_support=k_support,
+        pk_cb_support_coarse=pk_cb_support,
+        T_AGN=None,
+        nM=32,
+    )
+    expected_coarse = hmcode_pmm_jax(
+        cosmo,
+        z_coarse,
+        k_out,
+        k_support,
+        pk_mm_support,
+        pk_cb_support,
+        include_feedback=False,
+        nM=32,
+    )
+    expected = piecewise_akima_interpolation(
+        expected_coarse, z_coarse, z_fine, z_split
+    )
+    wrong_fallback = hmcode_pmm_fast_two_splines(
+        cosmo,
+        z_coarse,
+        z_fine,
+        k_out,
+        pk_mm_support,
+        z_split=z_split,
+        k_support=k_support,
+        T_AGN=None,
+        nM=32,
+    )
+
+    np.testing.assert_allclose(actual, expected, rtol=1.0e-12, atol=1.0e-12)
+    assert not np.allclose(actual, wrong_fallback, rtol=1.0e-8, atol=1.0e-10)
+
+    with pytest.raises(
+        ValueError, match="Pass either pk_cb_coarse or pk_cb_support_coarse"
+    ):
+        hmcode_pmm_fast_two_splines(
+            cosmo,
+            z_coarse,
+            z_fine,
+            k_out,
+            pk_mm_support,
+            pk_cb_coarse=pk_cb_support,
+            z_split=z_split,
+            k_support=k_support,
+            pk_cb_support_coarse=pk_cb_support,
+        )
+
+    with pytest.raises(ValueError, match="pk_cb_z must have shape"):
+        hmcode_pmm_fast_two_splines(
+            cosmo,
+            z_coarse,
+            z_fine,
+            k_out,
+            pk_mm_support,
+            z_split=z_split,
+            k_support=k_support,
+            pk_cb_support_coarse=pk_cb_support[:, :-1],
+        )
+
 
 def _class_feedback_reference_case():
     data_ref = np.loadtxt(Path(__file__).parent / "data" / "hmcode_class_feedback_reference.txt")
