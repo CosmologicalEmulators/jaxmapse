@@ -512,7 +512,6 @@ def test_hmcode_no_tweaks_preserves_one_halo_cutoff():
     from jaxmapse.hmcode import HMCodeParams, _params_notweaks
 
     nz = 5
-    zeros = jnp.zeros(nz)
     ones = jnp.ones(nz)
     k_star_mock = jnp.array([0.1, 0.2, 0.3, 0.4, 0.5])
 

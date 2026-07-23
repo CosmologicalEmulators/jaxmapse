@@ -119,6 +119,8 @@ __all__ = [
     "HMCodeCosmology",
     "hmcode_pmm",
     "hmcode_pmm_jax",
+    "hmcode_pmm_physical",
+    "hmcode_pmm_fast_physical",
     "hmcode_pmm_fast_two_splines",
     "piecewise_akima_interpolation",
     "hmcode_boost",

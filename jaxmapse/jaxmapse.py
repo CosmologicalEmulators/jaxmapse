@@ -223,9 +223,6 @@ def halofit_pmm_from_emulator(
     return linear_pmm_emu.k_grid, pk_nl
 
 
-get_halofit_pmm = halofit_pmm_from_emulator
-
-
 def _load_function(filepath: str, func_name: str) -> Callable:
     """Load a legacy artifact-local hook from trusted executable Python code."""
     if not os.path.exists(filepath):
@@ -476,19 +473,6 @@ def artifact_path(
     return emulator_path
 
 
-def compute_pca(data: Array, n_components: int):
-    """
-    Computes PCA on the training targets.
-    Returns: mean vector, basis matrix, and PCA coefficients.
-    """
-    mu = jnp.mean(data, axis=1, keepdims=True)
-    centered_data = data - mu
-    u, s, vh = jnp.linalg.svd(centered_data, full_matrices=False)
-    basis = u[:, :n_components]
-    coefficients = jnp.dot(basis.T, centered_data)
-    return jnp.squeeze(mu), basis, coefficients
-
-
 _TRAINED_EMULATORS_CACHE = None
 
 
@@ -554,14 +538,6 @@ class _TrainedEmulatorBundle:
 # Public registry retained for notebook and user workflows. Loading remains
 # lazy, so importing jaxmapse does not download artifacts unexpectedly.
 trained_emulators = _LazyTrainedEmulators()
-
-
-def save_pca_metadata(path: str, mu: Array, basis: Array):
-    """
-    Saves PCA metadata needed for reconstruction.
-    """
-    jnp.save(os.path.join(path, "pca_mean.npy"), mu)
-    jnp.save(os.path.join(path, "pca_projection.npy"), basis)
 
 
 def _parse_params(params, kwargs):
@@ -665,7 +641,7 @@ def hmcode_pmm_from_emulator(
     """
     from jaxace.background import w0waCDMCosmology
 
-    from .hmcode import HMCodeCosmology, _sigma_grid_jax, hmcode_pmm_jax
+    from .hmcode import HMCodeCosmology, hmcode_pmm_jax
 
     # Determine if the first argument was actually the redshift z
     is_first_arg_z = False
@@ -720,13 +696,6 @@ def hmcode_pmm_from_emulator(
     Pmm_lin_h = pk_lin_mm * (h**3)
     Pcb_lin_h = pk_lin_cb * (h**3)
 
-    # Predict at z=0 to calculate sigma_8 natively
-    pk_lin_mm_z0 = _evaluate_emu(linear_pmm_emu, params, 0.0, 1.0)
-    Pmm_lin_h_z0 = pk_lin_mm_z0 * (h**3)
-    sigma_8_jax = _sigma_grid_jax(k_support_h, Pmm_lin_h_z0[None, :], jnp.array([8.0]))[
-        0, 0
-    ]
-
     # Setup jaxmapse cosmology
     omega_nu = (params[5] / 93.14) / h**2
     omega_m = (params[3] + params[4]) / h**2 + omega_nu
@@ -736,7 +705,8 @@ def hmcode_pmm_from_emulator(
         Omega_b=omega_b_h2,
         h=h,
         n_s=params[1],
-        sigma_8=sigma_8_jax,
+        # HMCode keeps this legacy field for API compatibility but does not use it.
+        sigma_8=0.0,
         w0=params[6],
         wa=params[7],
         Omega_nu=omega_nu,
@@ -768,9 +738,6 @@ def hmcode_pmm_from_emulator(
     pk_nl = pk_nl_2d[0] if jnp.ndim(z) == 0 else pk_nl_2d
 
     return k, pk_nl
-
-
-get_hmcode_pmm = hmcode_pmm_from_emulator
 
 
 def hmcode_pmm_from_emulator_fast(
@@ -913,9 +880,6 @@ def hmcode_pmm_from_emulator_fast(
     return k, pk_nl
 
 
-get_hmcode_pmm_fast = hmcode_pmm_from_emulator_fast
-
-
 def predict_baryonic_discontinuity(
     input_params: Optional[Union[Array, dict]] = None,
     T_AGN: float = 10.0**7.8,
@@ -1030,8 +994,6 @@ def hmcode_pmm_baryonic_smart(
 
 
 
-get_hmcode_pmm_baryonic_smart = hmcode_pmm_baryonic_smart
-
 def hmcode_pmm_dmo_smart(
     input_params: Optional[Union[Array, dict]] = None,
     z_fine: Optional[Union[float, Array]] = None,
@@ -1092,4 +1054,3 @@ def hmcode_pmm_dmo_smart(
         piecewise_z_feature=None,
         **kwargs,
     )
-

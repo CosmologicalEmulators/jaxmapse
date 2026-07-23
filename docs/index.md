@@ -51,7 +51,7 @@ pk_linear = pmm(params, z, D)
 To compute nonlinear `Pmm` from the linear emulator using JAX-native Halofit:
 
 ```python
-k_halofit, pk_halofit = jaxmapse.get_halofit_pmm(
+k_halofit, pk_halofit = jaxmapse.halofit_pmm_from_emulator(
     params, z, D, linear_pmm_emu=pmm
 )
 ```
