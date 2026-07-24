@@ -1,9 +1,10 @@
+from pathlib import Path
+
 import jax
 import jax.numpy as jnp
 import pytest
 
 from jaxmapse import (
-    PkEmulator,
     halofit_background,
     halofit_cosmology,
     halofit_pmm,
@@ -137,38 +138,6 @@ def test_halofit_pmm_matches_mapse_jl_regression_values():
     assert jnp.allclose(selected, reference, rtol=1.0e-12, atol=1.0e-12)
 
 
-def test_pk_emulator_get_halofit_pmm_low_effort_api_matches_manual_call():
-    params, cosmology, z, k, _, _, _ = _synthetic_case(nk=33, nz=9)
-    linear = AnalyticLinearPmm(k)
-    emu = PkEmulator(linear_pmm=linear, linear_pkcb=linear, boost=None)
-
-    k_api, pk_api = emu.get_halofit_pmm(params, z)
-
-    # Manual equivalent using the same public low-level pieces.
-    # The fake linear emulator uses D^2 scaling, so choose D consistently with
-    # the API's native growth/background path by taking it from the API inputs.
-    from jaxace.background import w0waCDMCosmology
-
-    growth_cosmology = w0waCDMCosmology(
-        ln10As=params[0],
-        ns=params[1],
-        h=params[2] / 100.0,
-        omega_b=params[3],
-        omega_c=params[4],
-        m_nu=params[5],
-        w0=params[6],
-        wa=params[7],
-    )
-    d_z = growth_cosmology.D_z(z)
-    pk_lin = linear.get_Pk(params, z, d_z)
-    omega_m_z, omega_v_z = halofit_background(cosmology, z)
-    pk_manual = halofit_pmm(cosmology, z, k, pk_lin, omega_m_z, omega_v_z)
-
-    assert jnp.allclose(k_api, k)
-    assert pk_api.shape == (len(z), len(k))
-    assert jnp.allclose(pk_api, pk_manual, rtol=1.0e-12, atol=1.0e-12)
-
-
 def test_halofit_pmm_rejects_inconsistent_scalar_vector_shapes():
     _, cosmology, z, k, pk_lin_zk, omega_m_z, omega_v_z = _synthetic_case(nk=17, nz=3)
 
@@ -205,7 +174,7 @@ def test_halofit_background_z0_convention_is_documented_close_but_not_identical(
 def test_halofit_pmm_matches_class_reference_table():
     import numpy as np
 
-    data = np.loadtxt("tests/data/halofit_class_reference.txt")
+    data = np.loadtxt(Path(__file__).parent / "data" / "halofit_class_reference.txt")
     z_values = np.unique(data[:, 0])
     k_values = data[data[:, 0] == z_values[0], 1]
     pk_lin_zk = np.stack([data[data[:, 0] == z, 2] for z in z_values])

@@ -8,7 +8,9 @@ inputs; compute them outside the Halofit kernel and pass ``omega_m_z`` and
 
 from typing import NamedTuple, Optional
 
+import jax
 import jax.numpy as jnp
+import numpy as np
 from jaxace import background as _background
 from jaxtyping import Array
 
@@ -181,12 +183,13 @@ def _halofit_sigma2_derivs_columns(logk: Array, k: Array, pk_lin_kz: Array, r_z:
         * r_z
         * _halofit_integrate_columns(logk, integrand_pre * (k_col**2) * exp_term)
     )
-    d1 = dsig2dr * r_z / sig2
+    is_sig_invalid = (sig2 <= 0.0) | ~jnp.isfinite(sig2)
+    d1 = jnp.where(is_sig_invalid, jnp.nan, dsig2dr * r_z / sig2)
 
     d2sig2dr2 = _halofit_integrate_columns(
         logk, integrand_pre * (k_col**2) * exp_term * (-2.0 + 4.0 * k_r2)
     )
-    d2 = (r_z**2 / sig2) * d2sig2dr2 + d1 - d1**2
+    d2 = jnp.where(is_sig_invalid, jnp.nan, (r_z**2 / sig2) * d2sig2dr2 + d1 - d1**2)
 
     return sig2, d1, d2
 
@@ -195,7 +198,13 @@ def _halofit_rnl_columns(logk: Array, k: Array, pk_lin_kz: Array) -> Array:
     lr = jnp.zeros((1, pk_lin_kz.shape[1]), dtype=pk_lin_kz.dtype)
     for _ in range(_HALOFIT_NEWTON_STEPS):
         sig2, d1, _ = _halofit_sigma2_derivs_columns(logk, k, pk_lin_kz, jnp.exp(lr))
-        lr = lr - jnp.log(sig2) / d1
+        is_invalid = (
+            (sig2 <= 0.0) | ~jnp.isfinite(sig2) | (d1 == 0.0) | ~jnp.isfinite(d1)
+        )
+        step_raw = jnp.where(is_invalid, jnp.nan, jnp.log(sig2) / d1)
+        # Guard against a finite but tiny d1 producing an Inf or Nan step.
+        step = jnp.where(~jnp.isfinite(step_raw), jnp.nan, step_raw)
+        lr = lr - step
     return jnp.exp(lr)
 
 
@@ -348,6 +357,12 @@ def halofit_pmm(
     omega_m_arr = jnp.atleast_1d(omega_m_input)
     omega_v_arr = jnp.atleast_1d(omega_v_input)
 
+    if not isinstance(pk_arr, jax.core.Tracer):
+        if np.any(np.isnan(pk_arr)) or np.any(np.isinf(pk_arr)):
+            raise ValueError("pk_lin_mm_z must be finite.")
+        if np.any(pk_arr <= 0.0):
+            raise ValueError("pk_lin_mm_z must be strictly positive.")
+
     if k_arr.ndim != 1:
         raise ValueError("k must be a one-dimensional grid.")
     if z_input.ndim > 1:
@@ -395,7 +410,3 @@ def halofit_pmm_from_params(
 
     cosmology = halofit_cosmology(input_params, **cosmology_kwargs)
     return halofit_pmm(cosmology, z, k, pk_lin_mm_z, omega_m_z, omega_v_z)
-
-
-# Compatibility alias matching the Julia/Mapse.jl spelling.
-halofit_Pmm = halofit_pmm

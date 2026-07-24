@@ -12,14 +12,17 @@ pip install .
 
 ## Official artifact quickstart
 
-The official artifact registry is packaged with the wheel. By default, official trained emulators are loaded into `jaxmapse.trained_emulators` when the package is imported.
+To use `jaxmapse`, resolve the emulator artifact path and load the desired transfer function component explicitly:
 
 ```python
 import jax.numpy as jnp
 import jaxmapse
 from jaxmapse import w0waCDMCosmology
 
-emu = jaxmapse.trained_emulators[jaxmapse.DEFAULT_EMULATOR_ARTIFACT]
+# Resolve path to the default mnuw0wacdm_class artifact and load components
+root = jaxmapse.artifact_path(jaxmapse.DEFAULT_EMULATOR_ARTIFACT)
+pmm = jaxmapse.load_emulator(root / "Pk_lin_mm")
+pcb = jaxmapse.load_emulator(root / "Pk_lin_cb")
 
 # Default mnuw0wacdm parameter order:
 # [ln10As, ns, H0, omega_b, omega_c, Mnu, w0, wa]
@@ -38,19 +41,24 @@ cosmo = w0waCDMCosmology(
 )
 D = cosmo.D_z(z)
 
-k = emu.k_grid
-pk_nonlinear = emu.get_Pk(params, z, D)
+# Evaluate the linear total-matter power spectrum on its k-grid (300 points)
+k_grid = pmm.k_grid
+pk_linear = pmm(params, z, D)
 ```
-
-For the default artifact, the linear components use a 300-point grid and the nonlinear boost uses a 98-point grid. The top-level `emu.get_Pk(...)` returns nonlinear `Pmm` on the boost grid after interpolating linear `Pmm` onto that grid.
 
 ## Halofit
 
+To compute nonlinear `Pmm` from the linear emulator using JAX-native Halofit:
+
 ```python
-k_halofit, pk_halofit = emu.get_halofit_pmm(params, jnp.array([0.0, 0.5, 1.0]))
+k_halofit, pk_halofit = jaxmapse.halofit_pmm_from_emulator(
+    params, z, D, linear_pmm_emu=pmm
+)
 ```
 
 Vector-redshift outputs use the jaxmapse convention `(len(z), len(k))`.
+
+
 
 ## Artifact loading policy
 
