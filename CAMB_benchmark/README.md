@@ -1,50 +1,52 @@
-# CAMB HMCode Benchmarks
+# CAMB HMCode references
 
-This directory contains standalone scripts to regenerate exact precision benchmarks using the `CAMB` package and to evaluate execution timings of the `Mapse.jl` package native and `Reactant` pipelines.
+This directory contains fixed CAMB HMCode2020 references and comparison scripts
+for the JAX implementation.
 
-## Contents
+## Fiducial reference
 
-1. **`generate_fixtures.py`**: A Python script utilizing the `camb` library to produce the baseline reference grids for the Dark Matter Only (DMO) and Baryonic Feedback non-linear pipelines.
-2. **`benchmark.jl`**: A pure Julia benchmark suite focusing solely on pipeline execution speed, comparing the native evaluation with the XLA JIT-compiled `Reactant` evaluation.
-
-## 1. Generating CAMB Fixtures
-
-The reference grids evaluate exactly 150 redshift points between $z \in [0.0, 3.5]$ and 128 physical wavenumber points for $k \in [10^{-3}, 10^{1}]$ $h$/Mpc.
-
-To regenerate these `.txt` fixtures, ensure `camb` is installed in your Python environment and run:
+`generate_fixtures.py` reproduces the original fiducial DMO and feedback files:
 
 ```bash
-python generate_fixtures.py
+python CAMB_benchmark/generate_fixtures.py
 ```
 
-This will output `camb_pk_hmcode_dmo.txt` and `camb_pk_hmcode_fb.txt`. These specific files are utilized within the `Mapse.jl` unit test suite to enforce maximum relative error boundaries.
+The grid has 150 redshifts over `0 <= z <= 3.5` and 128 wavenumbers over
+`1e-3 <= k/(h Mpc^-1) <= 10`.
 
-## 2. Running the Benchmarks
+## Ten-cosmology reference set
 
-The benchmark script evaluates the complete linear and non-linear power spectrum emulator pathways, including `Lux` neural network evaluations, HMCode integration, and redshift interpolation. JIT compilation/warmup times are deliberately excluded from the timing outputs.
+`multicosmo/cases.json` records ten cosmologies spanning density parameters,
+neutrino mass, Hubble parameter, primordial parameters, `w0`, `wa`, and
+feedback temperature. Every case satisfies the emulator trust condition
+`w0 + wa < 0`.
 
-To execute the suite, run it within an environment that has `Mapse.jl`, `Reactant.jl`, and `AbstractCosmologicalEmulators.jl` available (e.g., the `bench_env` environment):
+Each `multicosmo/case_*.txt` file has shape `(150, 256)`:
+
+- columns `0:128`: CAMB `mead2020` DMO `P(k,z)` in Mpc^3;
+- columns `128:256`: CAMB `mead2020_feedback` `P(k,z)` in Mpc^3.
+
+The redshift and case-dependent physical wavenumber grids are defined in the
+manifest. Regenerate the references only when intentionally changing the CAMB
+reference configuration:
 
 ```bash
-julia --project=../bench_env benchmark.jl
+python CAMB_benchmark/generate_multicosmo_fixtures.py
 ```
 
-### Expected Timings
+Compare the direct and production `N_coarse=24` smart pipelines against the
+saved files with:
 
-Based on baseline runs, you should expect the following median execution timescales for a full $150 \times 128$ power spectrum evaluation volume:
+```bash
+python CAMB_benchmark/compare_multicosmo.py
+```
 
-#### Native Julia Pathway
-- **Direct DMO**: ~260 ms
-- **Direct Feedback**: ~500 ms
-- **Smart DMO (N=24)**: ~43 ms (6.0x speedup)
-- **Smart Feedback (N=24)**: ~82 ms (6.1x speedup)
-- **Smart Feedback (N=32)**: ~107 ms (4.6x speedup)
-- **Smart Feedback (N=40)**: ~134 ms (3.7x speedup)
+The comparison reports direct-versus-CAMB, smart-versus-direct, and
+smart-versus-CAMB statistics. CI requires direct-versus-CAMB and
+smart-versus-CAMB errors below 1.1%, and smart-versus-direct errors below 0.5%.
+Detailed results are written to `multicosmo/comparison_results.json`.
 
-#### Reactant Compiled Pathway (CPU Backend)
-The `Reactant` benchmarks construct the fully traced XLA evaluation graph for the emulators and HMCode integrations.
-- **Smart Feedback (N=24)**: ~28 ms 
-- **Smart Feedback (N=32)**: ~42 ms
-- **Smart Feedback (N=40)**: ~52 ms
+## Timing
 
-*Note: The first pass of the `Reactant` block in the benchmark script can take several minutes to successfully JIT-compile and trace the emulator networks. Subsequent traced executions drop entirely to the ~30-50 ms timescale above.*
+`benchmark.py` reports the existing fiducial smart-path timings. It must be run
+from this repository checkout so the local `jaxmapse` implementation is used.

@@ -1,8 +1,13 @@
 import os
+import sys
 import time
+from pathlib import Path
+
 import numpy as np
 import jax
 import jax.numpy as jnp
+
+sys.path.insert(0, str(Path(__file__).parents[1]))
 
 from jaxmapse import (
     load_trained_emulators,
@@ -61,18 +66,18 @@ def main():
             return func(*args, N_coarse=n_coarse, **kwargs)
             
         # Warmup
-        t0 = time.time()
+        t0 = time.perf_counter()
         res = jax.block_until_ready(eager_func())
-        t1 = time.time()
+        t1 = time.perf_counter()
         print(f"  Warmup {name}[{n_coarse}]: {(t1-t0)*1000:.1f} ms")
         
         # Benchmark
         reps = 10
         times = []
         for _ in range(reps):
-            t0 = time.time()
+            t0 = time.perf_counter()
             _ = jax.block_until_ready(eager_func())
-            t1 = time.time()
+            t1 = time.perf_counter()
             times.append(t1 - t0)
         
         times_ms = np.array(times) * 1000.0

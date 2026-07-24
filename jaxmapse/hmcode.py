@@ -339,11 +339,30 @@ def _pk_wiggle_jax(pk_lin, pk_nw, sigma):
 
 
 def _sigma_grid_jax(k_support, pk_cb_zk, r_grid):
-    logk = jnp.log(k_support)
-    W = _tophat_k(r_grid[:, None] * k_support[None, :])
+    # CAMB continues its log-power lookup beyond the tabulated k range when
+    # evaluating sigma(R).  Dropping that tail suppresses small-mass variance
+    # and corrupts the high-redshift one-halo transition.  Estimate the local
+    # asymptotic slope over the final ~0.3 dex and continue it on a fixed grid.
+    log_step = jnp.log(k_support[-1] / k_support[-2])
+    log_factors = jnp.linspace(log_step, jnp.log(1.0e4), 64)
+    k_tail = k_support[-1] * jnp.exp(log_factors)
+    logk_fit = jnp.log(k_support[-12:])
+    centered_logk = logk_fit - jnp.mean(logk_fit)
+    logp_fit = jnp.log(pk_cb_zk[:, -12:])
+    high_k_slope = jnp.sum(
+        (logp_fit - jnp.mean(logp_fit, axis=1, keepdims=True))
+        * centered_logk[None, :],
+        axis=1,
+    ) / jnp.sum(centered_logk**2)
+    pk_tail = pk_cb_zk[:, -1:] * jnp.exp(high_k_slope[:, None] * log_factors)
+    k_sigma = jnp.concatenate((k_support, k_tail))
+    pk_sigma = jnp.concatenate((pk_cb_zk, pk_tail), axis=1)
+
+    logk = jnp.log(k_sigma)
+    W = _tophat_k(r_grid[:, None] * k_sigma[None, :])
     integrand = (
-        k_support[None, None, :] ** 3
-        * pk_cb_zk[:, None, :]
+        k_sigma[None, None, :] ** 3
+        * pk_sigma[:, None, :]
         * W[None, :, :] ** 2
         / (2.0 * jnp.pi**2)
     )
@@ -397,8 +416,8 @@ def _compute_params_jax(
         Delta_v=dv,
         delta_c=dc,
         eta=0.1281 * s8 ** (-0.3644),
-        A=1.875 * (1.603) ** neff,
-        f_damp=0.2696 * s8**0.9403,
+        A=jnp.clip(1.875 * (1.603) ** neff, 0.5, 2.0),
+        f_damp=jnp.clip(0.2696 * s8**0.9403, 1.0e-3, 0.99),
         k_star=0.05618 * s8 ** (-1.013),
         B=jnp.full_like(z, 5.196),
         k_damp=0.05699 * s8 ** (-1.089),
