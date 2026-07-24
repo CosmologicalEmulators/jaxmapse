@@ -64,10 +64,6 @@ from .hmcode import (
     hmcode_pmm,
     hmcode_pmm_fast,
     hmcode_pmm_jax,
-    hmcode_pmm_physical,
-    hmcode_pmm_fast_physical,
-    hmcode_pmm_fast_two_splines,
-    piecewise_akima_interpolation,
 )
 from .jaxmapse import (
     DEFAULT_EMULATOR_ARTIFACT,
@@ -77,13 +73,13 @@ from .jaxmapse import (
     default_artifacts_toml,
     halofit_pmm_from_emulator,
     hmcode_pmm_baryonic_smart,
+    hmcode_pmm_dmo_smart,
     hmcode_pmm_from_emulator,
     hmcode_pmm_from_emulator_fast,
-    hmcode_pmm_dmo_smart,
     load_emulator,
     load_trained_emulators,
-    trained_emulators,
     predict_baryonic_discontinuity,
+    trained_emulators,
 )
 from .primordial import primordial_Pk
 
@@ -119,10 +115,6 @@ __all__ = [
     "HMCodeCosmology",
     "hmcode_pmm",
     "hmcode_pmm_jax",
-    "hmcode_pmm_physical",
-    "hmcode_pmm_fast_physical",
-    "hmcode_pmm_fast_two_splines",
-    "piecewise_akima_interpolation",
     "hmcode_boost",
     "hmcode_pmm_fast",
     "hmcode_boost_fast",

@@ -4,9 +4,9 @@ This module mirrors the embedded HMCode2020 port in Mapse.jl. Public arrays use
 jaxmapse's redshift-first convention: for vector redshifts, input spectra have
 shape ``(len(z), len(k_support))`` and outputs have shape ``(len(z), len(k))``.
 
-The public :func:`hmcode_pmm` function validates Python inputs, then dispatches to
-:func:`hmcode_pmm_jax`, a pure-JAX kernel that can be used under ``jax.jit`` for
-fixed input shapes and static ``nM``/feedback choices.
+Public wavenumbers are in Mpc⁻¹ and public spectra are in Mpc³. The h-unit
+HMCode implementation is private. :func:`hmcode_pmm_jax` is the physical-unit,
+pure-JAX kernel for fixed input shapes and static ``nM``/feedback choices.
 """
 
 from __future__ import annotations
@@ -350,8 +350,7 @@ def _sigma_grid_jax(k_support, pk_cb_zk, r_grid):
     centered_logk = logk_fit - jnp.mean(logk_fit)
     logp_fit = jnp.log(pk_cb_zk[:, -12:])
     high_k_slope = jnp.sum(
-        (logp_fit - jnp.mean(logp_fit, axis=1, keepdims=True))
-        * centered_logk[None, :],
+        (logp_fit - jnp.mean(logp_fit, axis=1, keepdims=True)) * centered_logk[None, :],
         axis=1,
     ) / jnp.sum(centered_logk**2)
     pk_tail = pk_cb_zk[:, -1:] * jnp.exp(high_k_slope[:, None] * log_factors)
@@ -605,7 +604,7 @@ def _sici_fast(x):
     t = x * x
     invt = 1.0 / t
     sx, cx = jnp.sin(x), jnp.cos(x)
-    
+
     f_rat = (_evalpoly(invt, P_F_RAT1) / _evalpoly(invt, Q_F_RAT1)) / x
     g_rat = (_evalpoly(invt, R_G_RAT1) / _evalpoly(invt, S_G_RAT1)) * invt
     f_asym = (
@@ -614,16 +613,16 @@ def _sici_fast(x):
     g_asym = (
         1.0 - _evalpoly(invt, R_G_ASYM_NUM) * invt / _evalpoly(invt, R_G_ASYM_DEN)
     ) * invt
-    
+
     f = jnp.where(t <= 144.0, f_rat, f_asym)
     g = jnp.where(t <= 144.0, g_rat, g_asym)
-    
+
     si_large = jnp.pi / 2.0 - f * cx - g * sx
     ci_large = f * sx - g * cx
-    
+
     si_small = x * _evalpoly(t, SI_SMALL)
     ci_small = EULER_GAMMA + jnp.log(x) + t * _evalpoly(t, CI_INT_SMALL)
-    
+
     is_small = x <= 4.0
     si = jnp.where(is_small, si_small, si_large)
     ci = jnp.where(is_small, ci_small, ci_large)
@@ -758,7 +757,7 @@ def _assemble_pass_jax(
 
 
 @partial(jax.jit, static_argnames=("nM", "include_feedback"))
-def hmcode_pmm_jax(
+def _hmcode_pmm_jax_h(
     cosmo,
     z: Array,
     k: Array,
@@ -772,7 +771,7 @@ def hmcode_pmm_jax(
     nM: int = 128,
     include_feedback: bool = True,
 ) -> Array:
-    """Pure-JAX HMCode2020 kernel.
+    """Private pure-JAX HMCode2020 kernel in h-units.
 
     This function assumes validated vector-redshift inputs with spectra shaped
     ``(len(z), len(k_support))``. ``nM`` and ``include_feedback`` are static JIT
@@ -798,15 +797,13 @@ def hmcode_pmm_jax(
 
     omh2 = cosmo.Omega_m * cosmo.h**2
     obh2 = cosmo.Omega_b * cosmo.h**2
-    
+
     tk_nw = _tk_eh_nowiggle(k, cosmo.h, omh2, obh2)
     pk_nw = k**cosmo.n_s * tk_nw**2
     dlnk = jnp.log(k[1] / k[0])
     sigma_wig = 0.25 / dlnk
-    
-    pk_wig = jax.vmap(
-        lambda row: _pk_wiggle_jax(row, pk_nw, sigma_wig)
-    )(pk_mm_out)
+
+    pk_wig = jax.vmap(lambda row: _pk_wiggle_jax(row, pk_nw, sigma_wig))(pk_mm_out)
     base = _assemble_pass_jax(
         k,
         z,
@@ -867,7 +864,47 @@ def hmcode_pmm_jax(
     return base
 
 
-def hmcode_pmm(
+def hmcode_pmm_jax(
+    cosmo,
+    z: Array,
+    k: Array,
+    k_support: Array,
+    pk_mm_z: Array,
+    pk_cb_z: Array,
+    *,
+    T_AGN: float = 10.0**7.8,
+    Mmin: float = 1.0,
+    Mmax: float = 1.0e18,
+    nM: int = 128,
+    include_feedback: bool = True,
+) -> Array:
+    """Pure-JAX HMCode2020 kernel with physical-unit inputs and output.
+
+    ``k`` and ``k_support`` are in Mpc⁻¹. Linear and nonlinear spectra are in
+    Mpc³. Shapes are fixed during compilation; ``nM`` and ``include_feedback``
+    are static choices.
+    """
+    cosmo = _normalize_cosmo(cosmo)
+    h = cosmo.h
+    return (
+        _hmcode_pmm_jax_h(
+            cosmo,
+            jnp.asarray(z),
+            jnp.asarray(k) / h,
+            jnp.asarray(k_support) / h,
+            jnp.asarray(pk_mm_z) * h**3,
+            jnp.asarray(pk_cb_z) * h**3,
+            T_AGN=T_AGN,
+            Mmin=Mmin,
+            Mmax=Mmax,
+            nM=nM,
+            include_feedback=include_feedback,
+        )
+        / h**3
+    )
+
+
+def _hmcode_pmm_h(
     cosmo,
     z: Array,
     k: Array,
@@ -881,7 +918,7 @@ def hmcode_pmm(
     Mmax: float = 1.0e18,
     nM: int = 128,
 ) -> Array:
-    """Compute HMCode2020 nonlinear total-matter ``Pmm``.
+    """Private validated HMCode2020 boundary in h-units.
 
     For vector redshifts, spectra are shaped ``(len(z), len(k_support))`` and
     output is ``(len(z), len(k))``. If ``k_support`` is omitted, ``k`` is used as
@@ -911,7 +948,7 @@ def hmcode_pmm(
         pk_cb = pk_cb[None, :]
     _validate_inputs(z_arr, k_out, k_sup, pk_mm, pk_cb)
     nM_eff = _hmcode_mass_steps(nM)
-    out = hmcode_pmm_jax(
+    out = _hmcode_pmm_jax_h(
         cosmo,
         jnp.asarray(z_arr),
         jnp.asarray(k_out),
@@ -935,7 +972,7 @@ def hmcode_boost(
     pk_cb_z: Optional[Array] = None,
     **kwargs,
 ) -> Array:
-    """Return HMCode nonlinear boost ``Pmm_nl / Pmm_lin``."""
+    """Return HMCode nonlinear boost from physical-unit linear spectra."""
     scalar_z = np.asarray(z).ndim == 0
     k_support = kwargs.get("k_support")
     k_out = np.asarray(k, dtype=float)
@@ -951,7 +988,7 @@ def hmcode_boost(
     return boost
 
 
-def hmcode_pmm_physical(
+def hmcode_pmm(
     cosmo: HMCodeCosmology,
     z: Array,
     k: Array,
@@ -960,7 +997,7 @@ def hmcode_pmm_physical(
     *,
     k_support: Optional[Array] = None,
     pk_cb_support_z: Optional[Array] = None,
-    T_AGN: float = 10.0**7.8,
+    T_AGN: Optional[float] = 10.0**7.8,
     Mmin: float = 1.0,
     Mmax: float = 1.0e18,
     nM: int = 128,
@@ -970,37 +1007,67 @@ def hmcode_pmm_physical(
     Public unit contract: ``k`` and ``k_support`` are in Mpc⁻¹, while all
     spectra are in Mpc³. The internal HMCode kernel remains in h-units.
     """
+    cosmo = _normalize_cosmo(cosmo)
     h = cosmo.h
-    k_phys = jnp.asarray(k)
-    k_support_phys = k_phys if k_support is None else jnp.asarray(k_support)
-    pk_mm_phys = jnp.asarray(pk_mm_z)
-    pk_cb_phys = pk_mm_phys if pk_cb_z is None else jnp.asarray(pk_cb_z)
-    return hmcode_pmm_jax(
-        cosmo, jnp.asarray(z), k_phys / h, k_support_phys / h,
-        pk_mm_phys * h**3, pk_cb_phys * h**3,
-        T_AGN=T_AGN, Mmin=Mmin, Mmax=Mmax, nM=nM,
-        include_feedback=True,
-    ) / h**3
+    if pk_cb_support_z is not None and pk_cb_z is not None:
+        raise ValueError("Pass either pk_cb_z or pk_cb_support_z, not both.")
+    pk_cb = pk_cb_support_z if pk_cb_support_z is not None else pk_cb_z
+    return (
+        _hmcode_pmm_h(
+            cosmo,
+            z,
+            np.asarray(k) / h,
+            np.asarray(pk_mm_z) * h**3,
+            None if pk_cb is None else np.asarray(pk_cb) * h**3,
+            k_support=None if k_support is None else np.asarray(k_support) / h,
+            T_AGN=T_AGN,
+            Mmin=Mmin,
+            Mmax=Mmax,
+            nM=nM,
+        )
+        / h**3
+    )
 
 
-def hmcode_pmm_fast_physical(
-    cosmo: HMCodeCosmology, z_coarse: Array, z_fine: Array, k: Array,
-    pk_mm_coarse: Array, pk_cb_coarse: Optional[Array] = None, *,
-    k_support: Optional[Array] = None, pk_cb_support_coarse: Optional[Array] = None,
-    T_AGN: float = 10.0**7.8, Mmin: float = 1.0, Mmax: float = 1.0e18,
+def hmcode_pmm_fast(
+    cosmo: HMCodeCosmology,
+    z_coarse: Array,
+    z_fine: Array,
+    k: Array,
+    pk_mm_coarse: Array,
+    pk_cb_coarse: Optional[Array] = None,
+    *,
+    k_support: Optional[Array] = None,
+    pk_cb_support_coarse: Optional[Array] = None,
+    T_AGN: Optional[float] = 10.0**7.8,
+    Mmin: float = 1.0,
+    Mmax: float = 1.0e18,
     nM: int = 128,
 ) -> Array:
-    """Physical-unit boundary for the coarse-redshift HMCode path."""
+    """Evaluate coarse-redshift HMCode with physical-unit inputs and output."""
+    cosmo = _normalize_cosmo(cosmo)
     h = cosmo.h
+    if pk_cb_support_coarse is not None and pk_cb_coarse is not None:
+        raise ValueError("Pass either pk_cb_coarse or pk_cb_support_coarse, not both.")
     k_phys_support = jnp.asarray(k if k_support is None else k_support)
     pk_cb = pk_cb_support_coarse if pk_cb_support_coarse is not None else pk_cb_coarse
     pk_cb = pk_mm_coarse if pk_cb is None else pk_cb
-    return hmcode_pmm_fast(
-        cosmo, z_coarse, z_fine, jnp.asarray(k) / h,
-        jnp.asarray(pk_mm_coarse) * h**3,
-        pk_cb_coarse=jnp.asarray(pk_cb) * h**3,
-        k_support=k_phys_support / h, T_AGN=T_AGN, Mmin=Mmin, Mmax=Mmax, nM=nM,
-    ) / h**3
+    return (
+        _hmcode_pmm_fast_h(
+            cosmo,
+            z_coarse,
+            z_fine,
+            jnp.asarray(k) / h,
+            jnp.asarray(pk_mm_coarse) * h**3,
+            pk_cb_coarse=jnp.asarray(pk_cb) * h**3,
+            k_support=k_phys_support / h,
+            T_AGN=T_AGN,
+            Mmin=Mmin,
+            Mmax=Mmax,
+            nM=nM,
+        )
+        / h**3
+    )
 
 
 def _validate_concrete_z(z_coarse: Array, z_fine: Array):
@@ -1026,7 +1093,7 @@ def _validate_concrete_z(z_coarse: Array, z_fine: Array):
             raise ValueError("z_fine must lie within the range of z_coarse.")
 
 
-def hmcode_pmm_fast(
+def _hmcode_pmm_fast_h(
     cosmo: HMCodeCosmology,
     z_coarse: Array,
     z_fine: Array,
@@ -1114,7 +1181,7 @@ def hmcode_pmm_fast(
 
     nM_eff = _hmcode_mass_steps(nM)
 
-    Pk_nl_coarse = hmcode_pmm_jax(
+    Pk_nl_coarse = _hmcode_pmm_jax_h(
         cosmo,
         z_coarse,
         k,
@@ -1131,21 +1198,16 @@ def hmcode_pmm_fast(
     return akima_interpolation(Pk_nl_coarse, z_coarse, z_fine)
 
 
-def piecewise_akima_interpolation(
+def _piecewise_akima_interpolation(
     values: Array,
     z_coarse: Array,
     z_fine: Array,
     z_split: float,
     *,
-    split_index: Optional[int] = None,
+    split_index: int,
 ) -> Array:
     """Interpolate with fixed-size independent Akima splines on two intervals."""
     from jaxace.utils import akima_interpolation
-
-    if split_index is None:
-        if isinstance(z_coarse, jax.core.Tracer) or isinstance(z_split, jax.core.Tracer):
-            raise ValueError("split_index is required when tracing piecewise interpolation.")
-        split_index = int(np.count_nonzero(np.asarray(z_coarse) <= float(z_split)))
 
     n_right = len(z_coarse) - split_index + 1
     if split_index < 5 or n_right < 5:
@@ -1173,88 +1235,7 @@ def piecewise_akima_interpolation(
     return jnp.where(use_left, prediction_left, prediction_right)
 
 
-def hmcode_pmm_fast_two_splines(
-    cosmo: HMCodeCosmology,
-    z_coarse: Array,
-    z_fine: Array,
-    k: Array,
-    pk_mm_coarse: Array,
-    pk_cb_coarse: Optional[Array] = None,
-    *,
-    z_split: float,
-    k_support: Optional[Array] = None,
-    pk_cb_support_coarse: Optional[Array] = None,
-    T_AGN: Optional[float] = 10.0**7.8,
-    Mmin: float = 1.0,
-    Mmax: float = 1.0e18,
-    nM: int = 128,
-) -> Array:
-    """Experimental fast HMCode path with independent splines on each z side.
-
-    HMCode is evaluated once on ``z_coarse``. The resulting ``P(k,z)`` is then
-    interpolated independently on ``z <= z_split`` and ``z >= z_split``. This
-    prevents one interpolant from smoothing across a known baryonic feature.
-    The split point must be present in the coarse grid and each side must have
-    at least five nodes for Akima interpolation.
-    """
-    zc = np.asarray(z_coarse)
-    zf = np.asarray(z_fine)
-    if zc.ndim != 1 or zf.ndim != 1:
-        raise ValueError("Two-spline interpolation requires one-dimensional z grids.")
-    if not (zc[0] <= z_split <= zc[-1]):
-        raise ValueError("z_split must lie within z_coarse.")
-    left = np.flatnonzero(zc <= z_split)
-    right = np.flatnonzero(zc >= z_split)
-    if len(left) < 5 or len(right) < 5:
-        raise ValueError("Each two-spline segment requires at least five coarse nodes.")
-
-    cosmo = _normalize_cosmo(cosmo)
-    z_coarse = jnp.asarray(z_coarse)
-    k = jnp.asarray(k)
-    k_sup = k if k_support is None else jnp.asarray(k_support)
-
-    pk_mm = jnp.asarray(pk_mm_coarse)
-    if pk_mm.ndim == 1:
-        pk_mm = pk_mm[None, :]
-
-    if pk_cb_support_coarse is not None and pk_cb_coarse is not None:
-        raise ValueError("Pass either pk_cb_coarse or pk_cb_support_coarse, not both.")
-    pk_cb = pk_cb_support_coarse if pk_cb_support_coarse is not None else pk_cb_coarse
-    pk_cb = pk_mm if pk_cb is None else jnp.asarray(pk_cb)
-    if pk_cb.ndim == 1:
-        pk_cb = pk_cb[None, :]
-
-    _validate_concrete_z(z_coarse, zf)
-    if not (
-        isinstance(z_coarse, jax.core.Tracer)
-        or isinstance(pk_mm, jax.core.Tracer)
-        or isinstance(pk_cb, jax.core.Tracer)
-    ):
-        _validate_inputs(
-            np.asarray(z_coarse),
-            np.asarray(k),
-            np.asarray(k_sup),
-            np.asarray(pk_mm),
-            np.asarray(pk_cb),
-        )
-
-    Pk_nl_coarse = hmcode_pmm_jax(
-        cosmo,
-        z_coarse,
-        k,
-        k_sup,
-        pk_mm,
-        pk_cb,
-        T_AGN=10.0**7.8 if T_AGN is None else float(T_AGN),
-        Mmin=float(Mmin),
-        Mmax=float(Mmax),
-        nM=_hmcode_mass_steps(nM),
-        include_feedback=T_AGN is not None,
-    )
-    return piecewise_akima_interpolation(Pk_nl_coarse, zc, zf, z_split)
-
-
-def hmcode_boost_fast(
+def _hmcode_boost_fast_h(
     cosmo: HMCodeCosmology,
     z_coarse: Array,
     z_fine: Array,
@@ -1342,7 +1323,7 @@ def hmcode_boost_fast(
 
     nM_eff = _hmcode_mass_steps(nM)
 
-    Pk_nl_coarse = hmcode_pmm_jax(
+    Pk_nl_coarse = _hmcode_pmm_jax_h(
         cosmo,
         z_coarse,
         k,
@@ -1360,3 +1341,39 @@ def hmcode_boost_fast(
     boost_coarse = Pk_nl_coarse / pk_lin_coarse
 
     return akima_interpolation(boost_coarse, z_coarse, z_fine)
+
+
+def hmcode_boost_fast(
+    cosmo: HMCodeCosmology,
+    z_coarse: Array,
+    z_fine: Array,
+    k: Array,
+    pk_mm_coarse: Array,
+    pk_cb_coarse: Optional[Array] = None,
+    *,
+    k_support: Optional[Array] = None,
+    pk_cb_support_coarse: Optional[Array] = None,
+    T_AGN: Optional[float] = 10.0**7.8,
+    Mmin: float = 1.0,
+    Mmax: float = 1.0e18,
+    nM: int = 128,
+) -> Array:
+    """Compute the fast HMCode boost from physical-unit linear spectra."""
+    cosmo = _normalize_cosmo(cosmo)
+    h = cosmo.h
+    if pk_cb_support_coarse is not None and pk_cb_coarse is not None:
+        raise ValueError("Pass either pk_cb_coarse or pk_cb_support_coarse, not both.")
+    pk_cb = pk_cb_support_coarse if pk_cb_support_coarse is not None else pk_cb_coarse
+    return _hmcode_boost_fast_h(
+        cosmo,
+        z_coarse,
+        z_fine,
+        jnp.asarray(k) / h,
+        jnp.asarray(pk_mm_coarse) * h**3,
+        pk_cb_coarse=None if pk_cb is None else jnp.asarray(pk_cb) * h**3,
+        k_support=(None if k_support is None else jnp.asarray(k_support) / h),
+        T_AGN=T_AGN,
+        Mmin=Mmin,
+        Mmax=Mmax,
+        nM=nM,
+    )

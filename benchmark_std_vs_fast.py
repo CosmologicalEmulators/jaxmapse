@@ -24,22 +24,22 @@ Methodology:
   - Each function warmed once, then 20 steady-state repetitions
   - Compilation/warm-up separated from steady-state timing
 """
-import sys
+import hashlib
 import os
-import time
 import platform
 import subprocess
-import hashlib
+import sys
+import time
 
 import numpy as np
 
 import jax
 jax.config.update("jax_platform_name", "cpu")
 jax.config.update("jax_enable_x64", True)
-import jax.numpy as jnp
+import jax.numpy as jnp  # noqa: E402
 
-import jaxmapse
-from jaxmapse import HMCodeCosmology, hmcode_pmm, hmcode_pmm_fast
+import jaxmapse  # noqa: E402
+from jaxmapse import HMCodeCosmology, hmcode_pmm, hmcode_pmm_fast  # noqa: E402
 
 # ---------------------------------------------------------------------------
 # Environment
@@ -51,7 +51,7 @@ print("JAX HMCode standard-vs-fast benchmark (corrected)")
 print("=" * 70)
 print(f"Python:     {sys.version.split()[0]}")
 print(f"JAX:        {jax.__version__}")
-import jaxlib
+import jaxlib  # noqa: E402
 print(f"jaxlib:     {jaxlib.__version__}")
 print(f"Machine:    {platform.machine()}")
 print(f"OS:         {platform.uname().system} {platform.release()}")
@@ -110,21 +110,21 @@ n_s = float(data["n_s"])
 sigma8 = float(data["sigma8"])
 
 print(f"\nInput spectra: {os.path.basename(INPUT_FILE)}")
-print(f"  Source: CAMB z=0 linear P(k) scaled by Carroll et al. (1992) growth factor")
+print("  Source: CAMB z=0 linear P(k) scaled by Carroll et al. (1992) growth factor")
 print(f"  k:         {len(k_np)} log-spaced from {k_np[0]:.1e} to {k_np[-1]:.1e}")
 print(f"  k_support: {len(k_support_np)} log-spaced from {k_support_np[0]:.1e} to {k_support_np[-1]:.1e}")
 print(f"  z_fine:    {len(z_fine_np)} linear from {z_fine_np[0]:.1f} to {z_fine_np[-1]:.1f}")
 print(f"  z_coarse:  {len(z_coarse_np)} linear from {z_coarse_np[0]:.1f} to {z_coarse_np[-1]:.1f}")
 
-# Convert to JAX arrays
-k = jnp.asarray(k_np)
-k_support = jnp.asarray(k_support_np)
+# Convert the stored h-unit fixtures to the physical-unit public API.
+k = jnp.asarray(k_np * h)
+k_support = jnp.asarray(k_support_np * h)
 z_fine = jnp.asarray(z_fine_np)
 z_coarse = jnp.asarray(z_coarse_np)
-pk_mm_fine_sup = jnp.asarray(pk_mm_fine_sup_np)
-pk_cb_fine_sup = jnp.asarray(pk_cb_fine_sup_np)
-pk_mm_coarse_sup = jnp.asarray(pk_mm_coarse_sup_np)
-pk_cb_coarse_sup = jnp.asarray(pk_cb_coarse_sup_np)
+pk_mm_fine_sup = jnp.asarray(pk_mm_fine_sup_np / h**3)
+pk_cb_fine_sup = jnp.asarray(pk_cb_fine_sup_np / h**3)
+pk_mm_coarse_sup = jnp.asarray(pk_mm_coarse_sup_np / h**3)
+pk_cb_coarse_sup = jnp.asarray(pk_cb_coarse_sup_np / h**3)
 
 # ---------------------------------------------------------------------------
 # Cosmology

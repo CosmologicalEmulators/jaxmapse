@@ -14,10 +14,9 @@ from jaxmapse import (
     hmcode_pmm_from_emulator,
     hmcode_pmm_from_emulator_fast,
     load_emulator,
-    piecewise_akima_interpolation,
     predict_baryonic_discontinuity,
 )
-
+from jaxmapse.hmcode import _piecewise_akima_interpolation
 
 PARAMS = jnp.array([3.044, 0.9649, 67.36, 0.02237, 0.12, 0.06, -1.0, 0.0])
 Z_FINE = jnp.linspace(0.0, 3.5, 150)
@@ -66,7 +65,7 @@ def test_piecewise_akima_has_static_slices_and_is_differentiable():
     values = jnp.stack((jnp.sin(z_coarse), jnp.cos(z_coarse)), axis=1)
 
     interpolate = jax.jit(
-        lambda data, feature: piecewise_akima_interpolation(
+        lambda data, feature: _piecewise_akima_interpolation(
             data,
             z_coarse,
             z_coarse,
@@ -80,6 +79,21 @@ def test_piecewise_akima_has_static_slices_and_is_differentiable():
     gradient = jax.grad(lambda data: jnp.sum(interpolate(data, z_feature)))(values)
     assert gradient.shape == values.shape
     assert jnp.all(jnp.isfinite(gradient))
+
+
+def test_piecewise_fast_path_requires_static_split_index():
+    with pytest.raises(
+        ValueError,
+        match="piecewise_split_index is required with piecewise_z_feature",
+    ):
+        hmcode_pmm_from_emulator_fast(
+            PARAMS,
+            z_coarse=jnp.linspace(0.0, 3.5, 24),
+            z_fine=Z_FINE,
+            linear_pmm_emu=None,
+            linear_pcb_emu=None,
+            piecewise_z_feature=2.0,
+        )
 
 
 @pytest.fixture(scope="module")
@@ -99,9 +113,7 @@ def camb_references():
 
 @pytest.mark.parametrize("n_coarse", N_COARSE_VALUES)
 @pytest.mark.parametrize("mode", ("dmo", "feedback"))
-def test_smart_hmcode_matches_camb(
-    linear_emulators, camb_references, mode, n_coarse
-):
+def test_smart_hmcode_matches_camb(linear_emulators, camb_references, mode, n_coarse):
     pmm, pcb = linear_emulators
     reference = camb_references[0 if mode == "dmo" else 1]
     h = PARAMS[2] / 100.0
@@ -209,9 +221,7 @@ def test_end_to_end_pipeline_compiles_once_and_remains_dynamic(linear_emulators,
 @pytest.mark.parametrize(
     "path", ("direct", "fixed_fast", "dmo_smart", "baryonic_smart")
 )
-def test_end_to_end_reverse_gradients_match_finite_differences(
-    linear_emulators, path
-):
+def test_end_to_end_reverse_gradients_match_finite_differences(linear_emulators, path):
     pmm, pcb = linear_emulators
 
     def loss(params):
@@ -286,8 +296,7 @@ def test_baryonic_smart_dynamic_temperature_reuses_graph_and_has_correct_gradien
     reverse_gradient = jax.jit(jax.grad(loss))(log_temperature)
     step = 1.0e-5
     finite_difference = (
-        jax.jit(loss)(log_temperature + step)
-        - jax.jit(loss)(log_temperature - step)
+        jax.jit(loss)(log_temperature + step) - jax.jit(loss)(log_temperature - step)
     ) / (2.0 * step)
     reverse_gradient.block_until_ready()
     finite_difference.block_until_ready()
@@ -357,7 +366,9 @@ def test_baryonic_smart_reuses_compilation_across_large_feature_shifts(
         assert prediction.shape == (len(z_fine), pmm.k_grid.shape[0])
         assert jnp.all(jnp.diff(grid) > 0.0)
         assert jnp.all(jnp.isfinite(prediction))
-        np.testing.assert_allclose(grid[n_left - 1], evaluate(*case)[0], rtol=0.0, atol=1.0e-12)
+        np.testing.assert_allclose(
+            grid[n_left - 1], evaluate(*case)[0], rtol=0.0, atol=1.0e-12
+        )
         reference = evaluate(*case)[2]
         np.testing.assert_allclose(prediction, reference, rtol=1.0e-12, atol=1.0e-12)
 
@@ -365,9 +376,13 @@ def test_baryonic_smart_reuses_compilation_across_large_feature_shifts(
         return jnp.mean(jnp.log(evaluate(params, log_temperature)[2]))
 
     compiled_loss = jax.jit(loss)
-    compiled_gradient = jax.jit(jax.grad(loss, argnums=(0, 1))).lower(*cases[0]).compile()
+    compiled_gradient = (
+        jax.jit(jax.grad(loss, argnums=(0, 1))).lower(*cases[0]).compile()
+    )
     for params, log_temperature in cases[1:]:
-        params_gradient, temperature_gradient = compiled_gradient(params, log_temperature)
+        params_gradient, temperature_gradient = compiled_gradient(
+            params, log_temperature
+        )
         jax.block_until_ready((params_gradient, temperature_gradient))
         assert jnp.all(jnp.isfinite(params_gradient))
         assert jnp.isfinite(temperature_gradient)

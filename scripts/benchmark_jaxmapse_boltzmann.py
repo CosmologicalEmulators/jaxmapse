@@ -409,20 +409,21 @@ def hmcode_cosmology(cp: CosmoPoint) -> HMCodeCosmology:
 
 
 def jax_hmcode(cp: CosmoPoint, z, k_out, k_support, pmm_support, pcb_support):
-    return np.asarray(
+    pk_physical = np.asarray(
         jax.block_until_ready(
             hmcode_pmm_jax(
                 hmcode_cosmology(cp),
                 jnp.asarray(z),
-                jnp.asarray(k_out),
-                jnp.asarray(k_support),
-                jnp.asarray(pmm_support),
-                jnp.asarray(pcb_support),
+                jnp.asarray(k_out * cp.h),
+                jnp.asarray(k_support * cp.h),
+                jnp.asarray(pmm_support / cp.h**3),
+                jnp.asarray(pcb_support / cp.h**3),
                 nM=96,
                 include_feedback=True,
             )
         )
     )
+    return pk_physical * cp.h**3
 
 
 def jax_halofit(cp: CosmoPoint, z, k_support, pmm_support, k_out):

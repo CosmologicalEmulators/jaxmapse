@@ -7,7 +7,6 @@ import numpy as np
 import jaxmapse
 from CAMB_benchmark.compare_multicosmo import evaluate_case
 
-
 CAMB_MAX_RELATIVE_ERROR = 0.011
 SMART_MAX_RELATIVE_ERROR = 0.005
 
@@ -30,9 +29,7 @@ def test_multicosmology_hmcode_accuracy_against_camb():
 
     for index, case in enumerate(manifest["cases"]):
         assert case["params"][6] + case["params"][7] < 0.0
-        fixture = np.loadtxt(
-            fixture_root / f"case_{index:02d}_{case['name']}.txt"
-        )
+        fixture = np.loadtxt(fixture_root / f"case_{index:02d}_{case['name']}.txt")
         assert fixture.shape == (grid["n_z"], 2 * grid["n_k"])
         assert np.all(np.isfinite(fixture))
         assert np.all(fixture > 0.0)

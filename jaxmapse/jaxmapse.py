@@ -503,8 +503,10 @@ class _LazyTrainedEmulators(dict):
         if not self:
             loaded = load_trained_emulators()
             super().update(
-                {name: _TrainedEmulatorBundle(components)
-                 for name, components in loaded.items()}
+                {
+                    name: _TrainedEmulatorBundle(components)
+                    for name, components in loaded.items()
+                }
             )
         return self
 
@@ -627,8 +629,7 @@ def hmcode_pmm_from_emulator(
         Number of mass integration steps (default: 128).
     k_out: Array, optional
         Custom output wavenumbers in **physical** units (Mpc^-1), not h-units.
-        If None, uses the emulator's native k grid (also physical). The function
-        converts to h-units internally for the HMCode kernel.
+        If None, uses the emulator's native k grid, which is also physical.
     kwargs:
         Cosmological parameters can also be passed directly as keyword arguments.
 
@@ -690,12 +691,6 @@ def hmcode_pmm_from_emulator(
     pk_lin_mm = _evaluate_emu(linear_pmm_emu, params, z_arr, D)
     pk_lin_cb = _evaluate_emu(linear_pcb_emu, params, z_arr, D)
 
-    # Convert linear spectra to h-units for jaxmapse input
-    k_h = k / h
-    k_support_h = k_support / h
-    Pmm_lin_h = pk_lin_mm * (h**3)
-    Pcb_lin_h = pk_lin_cb * (h**3)
-
     # Setup jaxmapse cosmology
     omega_nu = (params[5] / 93.14) / h**2
     omega_m = (params[3] + params[4]) / h**2 + omega_nu
@@ -713,19 +708,19 @@ def hmcode_pmm_from_emulator(
         Omega_k=0.0,
     )
 
-    Pmm_lin_h_2d = jnp.atleast_2d(Pmm_lin_h)
-    Pcb_lin_h_2d = jnp.atleast_2d(Pcb_lin_h)
+    pk_lin_mm_2d = jnp.atleast_2d(pk_lin_mm)
+    pk_lin_cb_2d = jnp.atleast_2d(pk_lin_cb)
     if nM is None:
         nM = 128
 
     # Solve non-linear HMCode2020 natively in JAX (JIT friendly)
-    Pmm_jax_h = hmcode_pmm_jax(
+    pk_nl_2d = hmcode_pmm_jax(
         hmcode_cosmo,
         z_arr,
-        k_h,
-        k_support_h,
-        Pmm_lin_h_2d,
-        Pcb_lin_h_2d,
+        k,
+        k_support,
+        pk_lin_mm_2d,
+        pk_lin_cb_2d,
         T_AGN=10.0**7.8 if T_AGN is None else T_AGN,
         Mmin=1.0,
         Mmax=1.0e18,
@@ -733,8 +728,7 @@ def hmcode_pmm_from_emulator(
         include_feedback=T_AGN is not None,
     )
 
-    # Convert output back to physical units and match input dimension
-    pk_nl_2d = Pmm_jax_h / (h**3)
+    # Match the input redshift dimension.
     pk_nl = pk_nl_2d[0] if jnp.ndim(z) == 0 else pk_nl_2d
 
     return k, pk_nl
@@ -789,10 +783,13 @@ def hmcode_pmm_from_emulator_fast(
         - This avoids running the linear/transfer emulators on the dense fine redshift grid.
     """
     from jaxace.utils import akima_interpolation
-    from .hmcode import piecewise_akima_interpolation
+
+    from .hmcode import _piecewise_akima_interpolation
 
     if N_z_coarse < 5:
         raise ValueError("N_z_coarse must be at least 5 for Akima interpolation.")
+    if piecewise_z_feature is not None and piecewise_split_index is None:
+        raise ValueError("piecewise_split_index is required with piecewise_z_feature.")
 
     if z_coarse is None:
         if z is None:
@@ -871,7 +868,7 @@ def hmcode_pmm_from_emulator_fast(
     if piecewise_z_feature is None:
         pk_nl_fine = akima_interpolation(pk_nl_coarse, _z_coarse, _z_fine)
     else:
-        pk_nl_fine = piecewise_akima_interpolation(
+        pk_nl_fine = _piecewise_akima_interpolation(
             pk_nl_coarse,
             _z_coarse,
             _z_fine,
@@ -996,7 +993,9 @@ def hmcode_pmm_baryonic_smart(
     z_min, z_max = jnp.min(z_arr), jnp.max(z_arr)
 
     # Predict feature point
-    z_feature = predict_baryonic_discontinuity(input_params=input_params, T_AGN=T_AGN, **kwargs)
+    z_feature = predict_baryonic_discontinuity(
+        input_params=input_params, T_AGN=T_AGN, **kwargs
+    )
 
     z_feature = _clip_baryonic_feature(z_min, z_max, z_feature, 1.0e-4)
     n_left = _baryonic_left_nodes(N_coarse)
@@ -1022,7 +1021,6 @@ def hmcode_pmm_baryonic_smart(
         piecewise_split_index=n_left,
         **kwargs,
     )
-
 
 
 def hmcode_pmm_dmo_smart(

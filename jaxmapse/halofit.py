@@ -10,9 +10,9 @@ from typing import NamedTuple, Optional
 
 import jax
 import jax.numpy as jnp
+import numpy as np
 from jaxace import background as _background
 from jaxtyping import Array
-import numpy as np
 
 _HALOFIT_OMEGA_GAMMA_H2 = 2.469e-5
 _HALOFIT_MNU_TO_OMEGA_NU_H2 = 93.14
@@ -198,7 +198,9 @@ def _halofit_rnl_columns(logk: Array, k: Array, pk_lin_kz: Array) -> Array:
     lr = jnp.zeros((1, pk_lin_kz.shape[1]), dtype=pk_lin_kz.dtype)
     for _ in range(_HALOFIT_NEWTON_STEPS):
         sig2, d1, _ = _halofit_sigma2_derivs_columns(logk, k, pk_lin_kz, jnp.exp(lr))
-        is_invalid = (sig2 <= 0.0) | ~jnp.isfinite(sig2) | (d1 == 0.0) | ~jnp.isfinite(d1)
+        is_invalid = (
+            (sig2 <= 0.0) | ~jnp.isfinite(sig2) | (d1 == 0.0) | ~jnp.isfinite(d1)
+        )
         step_raw = jnp.where(is_invalid, jnp.nan, jnp.log(sig2) / d1)
         # Guard against a finite but tiny d1 producing an Inf or Nan step.
         step = jnp.where(~jnp.isfinite(step_raw), jnp.nan, step_raw)
@@ -408,6 +410,3 @@ def halofit_pmm_from_params(
 
     cosmology = halofit_cosmology(input_params, **cosmology_kwargs)
     return halofit_pmm(cosmology, z, k, pk_lin_mm_z, omega_m_z, omega_v_z)
-
-
-

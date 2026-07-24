@@ -5,16 +5,33 @@ import jax.numpy as jnp
 import numpy as np
 import pytest
 
+import jaxmapse as jm
 from jaxmapse import (
     HMCodeCosmology,
     hmcode_boost,
     hmcode_boost_fast,
     hmcode_pmm,
     hmcode_pmm_fast,
-    hmcode_pmm_fast_two_splines,
     hmcode_pmm_jax,
-    piecewise_akima_interpolation,
 )
+
+
+def test_hmcode_public_api_is_physical_only():
+    assert {
+        "hmcode_pmm",
+        "hmcode_pmm_jax",
+        "hmcode_pmm_fast",
+        "hmcode_boost",
+        "hmcode_boost_fast",
+    } <= set(jm.__all__)
+    for removed in (
+        "hmcode_pmm_physical",
+        "hmcode_pmm_fast_physical",
+        "hmcode_pmm_fast_two_splines",
+        "piecewise_akima_interpolation",
+    ):
+        assert removed not in jm.__all__
+        assert not hasattr(jm, removed)
 
 
 def _reference_case():
@@ -48,10 +65,10 @@ def _reference_case():
     return (
         cosmo,
         jnp.asarray(z_values),
-        jnp.asarray(k_values),
-        jnp.asarray(pk_mm_zk),
-        jnp.asarray(pk_cb_zk),
-        jnp.asarray(pk_nl_ref_zk),
+        jnp.asarray(k_values * h),
+        jnp.asarray(pk_mm_zk / h**3),
+        jnp.asarray(pk_cb_zk / h**3),
+        jnp.asarray(pk_nl_ref_zk / h**3),
         jnp.asarray(boost_ref_zk),
     )
 
@@ -85,11 +102,11 @@ def _curved_parity_case():
     return (
         cosmo,
         jnp.asarray(z_values),
-        jnp.asarray(k_values),
-        jnp.asarray(pmm_zk),
-        jnp.asarray(pcb_zk),
-        jnp.asarray(dmo_zk),
-        jnp.asarray(feedback_zk),
+        jnp.asarray(k_values * h),
+        jnp.asarray(pmm_zk / h**3),
+        jnp.asarray(pcb_zk / h**3),
+        jnp.asarray(dmo_zk / h**3),
+        jnp.asarray(feedback_zk / h**3),
     )
 
 
@@ -201,7 +218,6 @@ def test_hmcode_support_output_grid_and_scalar_support_call():
         interp_val = jnp.interp(jnp.log(k_out_irr), jnp.log(k), pmm_full[iz])
         assert jnp.allclose(interp_val, pmm_kout_irr[iz], rtol=5e-3)
 
-
     scalar_pmm = hmcode_pmm(
         cosmo,
         0.0,
@@ -249,6 +265,7 @@ def test_hmcode_pure_jax_kernel_is_jittable(nM):
     assert pmm_jit.shape == pmm_host.shape
     assert jnp.all(jnp.isfinite(pmm_jit))
     assert jnp.allclose(pmm_jit, pmm_host, rtol=3.0e-3, atol=0.0)
+
 
 @pytest.mark.parametrize("nM", [16, 64])
 def test_hmcode_fast_kernel_is_jittable(nM):
@@ -399,88 +416,13 @@ def test_hmcode_fast_apis_validation_and_correctness():
         )
 
 
-def test_hmcode_two_splines_uses_and_validates_cb_support_spectrum():
-    cosmo, _, k_support, _, _, _, _ = _reference_case()
-    z_coarse = jnp.linspace(0.0, 1.0, 11)
-    z_fine = jnp.linspace(0.0, 1.0, 21)
-    z_split = 0.5
-    k_out = k_support[::2]
-
-    redshift_scaling = 1.0 / (1.0 + z_coarse[:, None]) ** 2
-    pk_mm_support = 2.0e4 * redshift_scaling / (1.0 + k_support[None, :]) ** 2
-    pk_cb_support = pk_mm_support * (0.7 + 0.2 / (1.0 + k_support[None, :]))
-
-    actual = hmcode_pmm_fast_two_splines(
-        cosmo,
-        z_coarse,
-        z_fine,
-        k_out,
-        pk_mm_support,
-        z_split=z_split,
-        k_support=k_support,
-        pk_cb_support_coarse=pk_cb_support,
-        T_AGN=None,
-        nM=32,
-    )
-    expected_coarse = hmcode_pmm_jax(
-        cosmo,
-        z_coarse,
-        k_out,
-        k_support,
-        pk_mm_support,
-        pk_cb_support,
-        include_feedback=False,
-        nM=32,
-    )
-    expected = piecewise_akima_interpolation(
-        expected_coarse, z_coarse, z_fine, z_split
-    )
-    wrong_fallback = hmcode_pmm_fast_two_splines(
-        cosmo,
-        z_coarse,
-        z_fine,
-        k_out,
-        pk_mm_support,
-        z_split=z_split,
-        k_support=k_support,
-        T_AGN=None,
-        nM=32,
-    )
-
-    np.testing.assert_allclose(actual, expected, rtol=1.0e-12, atol=1.0e-12)
-    assert not np.allclose(actual, wrong_fallback, rtol=1.0e-8, atol=1.0e-10)
-
-    with pytest.raises(
-        ValueError, match="Pass either pk_cb_coarse or pk_cb_support_coarse"
-    ):
-        hmcode_pmm_fast_two_splines(
-            cosmo,
-            z_coarse,
-            z_fine,
-            k_out,
-            pk_mm_support,
-            pk_cb_coarse=pk_cb_support,
-            z_split=z_split,
-            k_support=k_support,
-            pk_cb_support_coarse=pk_cb_support,
-        )
-
-    with pytest.raises(ValueError, match="pk_cb_z must have shape"):
-        hmcode_pmm_fast_two_splines(
-            cosmo,
-            z_coarse,
-            z_fine,
-            k_out,
-            pk_mm_support,
-            z_split=z_split,
-            k_support=k_support,
-            pk_cb_support_coarse=pk_cb_support[:, :-1],
-        )
-
-
 def _class_feedback_reference_case():
-    data_ref = np.loadtxt(Path(__file__).parent / "data" / "hmcode_class_feedback_reference.txt")
-    data_sup = np.loadtxt(Path(__file__).parent / "data" / "hmcode_class_linear_support.txt")
+    data_ref = np.loadtxt(
+        Path(__file__).parent / "data" / "hmcode_class_feedback_reference.txt"
+    )
+    data_sup = np.loadtxt(
+        Path(__file__).parent / "data" / "hmcode_class_linear_support.txt"
+    )
 
     z_values = np.unique(data_sup[:, 0])
     k_values = data_sup[data_sup[:, 0] == z_values[0], 1]
@@ -502,7 +444,7 @@ def _class_feedback_reference_case():
         Omega_b=omega_b,
         h=h,
         n_s=0.9649,
-        sigma_8=0.8109118, # approximated to match CLASS sigma8, but we feed linear Pk directly
+        sigma_8=0.8109118,  # approximated to match CLASS sigma8, but we feed linear Pk directly
         w0=-1.0,
         wa=0.0,
         Omega_nu=omega_nu,
@@ -512,21 +454,23 @@ def _class_feedback_reference_case():
     return (
         cosmo,
         jnp.asarray(z_values),
-        jnp.asarray(k_values),
-        jnp.asarray(pk_mm_zk),
-        jnp.asarray(pk_cb_zk),
-        jnp.asarray(pk_nl_feedback_zk),
+        jnp.asarray(k_values * h),
+        jnp.asarray(pk_mm_zk / h**3),
+        jnp.asarray(pk_cb_zk / h**3),
+        jnp.asarray(pk_nl_feedback_zk / h**3),
         jnp.asarray(feedback_boost_zk),
-        jnp.asarray(pk_nl_dmo_zk),
+        jnp.asarray(pk_nl_dmo_zk / h**3),
         jnp.asarray(dmo_boost_zk),
     )
 
 
 def test_hmcode_feedback_matches_patched_class_reference():
-    cosmo, z, k, pk_mm_zk, pk_cb_zk, _, fb_boost_lin, _, dmo_boost_lin = _class_feedback_reference_case()
+    cosmo, z, k, pk_mm_zk, pk_cb_zk, _, fb_boost_lin, _, dmo_boost_lin = (
+        _class_feedback_reference_case()
+    )
     boost = hmcode_boost(cosmo, z, k, pk_mm_zk, pk_cb_zk, T_AGN=10.0**7.8, nM=256)
 
-    mask = k <= 10.0
+    mask = k <= 10.0 * cosmo.h
     boost_ref_zk = fb_boost_lin
     boost = boost[:, mask]
     k_ref = k[mask]
@@ -541,23 +485,34 @@ def test_hmcode_feedback_matches_patched_class_reference():
     # CLASS comparison slightly while keeping the full response below 0.51%.
     assert jnp.all(err < 5.1e-3)
 
+
 def test_hmcode_feedback_low_k_response_regression():
-    cosmo, z, k, pk_mm_zk, pk_cb_zk, _, boost_ref_zk, _, _ = _class_feedback_reference_case()
+    cosmo, z, k, pk_mm_zk, pk_cb_zk, _, boost_ref_zk, _, _ = (
+        _class_feedback_reference_case()
+    )
 
     feedback = hmcode_pmm(cosmo, z, k, pk_mm_zk, pk_cb_zk, T_AGN=10.0**7.8, nM=256)
     dmo = hmcode_pmm(cosmo, z, k, pk_mm_zk, pk_cb_zk, T_AGN=None, nM=256)
 
     response = feedback / dmo
-    low_k = k <= 3.0e-4
+    low_k = k <= 3.0e-4 * cosmo.h
 
-    k_ref = k[k <= 10.0]
-    low_k_ref = k_ref <= 3.0e-4
+    k_ref = k[k <= 10.0 * cosmo.h]
+    low_k_ref = k_ref <= 3.0e-4 * cosmo.h
 
     np.testing.assert_allclose(response[:, low_k], 1.0, rtol=1.0e-3, atol=0.0)
-    np.testing.assert_allclose((feedback / pk_mm_zk)[:, low_k], boost_ref_zk[:, low_k_ref], rtol=1.0e-3, atol=0.0)
+    np.testing.assert_allclose(
+        (feedback / pk_mm_zk)[:, low_k],
+        boost_ref_zk[:, low_k_ref],
+        rtol=1.0e-3,
+        atol=0.0,
+    )
+
 
 def test_hmcode_feedback_low_k_response_regression_fast_jit():
-    cosmo, z, k, pk_mm_zk, pk_cb_zk, _, boost_ref_zk, _, _ = _class_feedback_reference_case()
+    cosmo, z, k, pk_mm_zk, pk_cb_zk, _, boost_ref_zk, _, _ = (
+        _class_feedback_reference_case()
+    )
 
     z_fine = jnp.linspace(z[0], z[-1], 25)
 
@@ -567,28 +522,39 @@ def test_hmcode_feedback_low_k_response_regression_fast_jit():
 
     @jax.jit
     def run_fast_fb(c, zc, zf, k_arr, pm, pc):
-        return hmcode_pmm_fast(c, zc, zf, k_arr, pm, pk_cb_coarse=pc, T_AGN=10.0**7.8, nM=64)
+        return hmcode_pmm_fast(
+            c, zc, zf, k_arr, pm, pk_cb_coarse=pc, T_AGN=10.0**7.8, nM=64
+        )
 
     @jax.jit
     def run_boost_fast(c, zc, zf, k_arr, pm, pc):
-        return hmcode_boost_fast(c, zc, zf, k_arr, pm, pk_cb_coarse=pc, T_AGN=10.0**7.8, nM=64)
+        return hmcode_boost_fast(
+            c, zc, zf, k_arr, pm, pk_cb_coarse=pc, T_AGN=10.0**7.8, nM=64
+        )
 
     dmo = run_fast_dmo(cosmo, z, z_fine, k, pk_mm_zk, pk_cb_zk)
     feedback = run_fast_fb(cosmo, z, z_fine, k, pk_mm_zk, pk_cb_zk)
     boost_fast_out = run_boost_fast(cosmo, z, z_fine, k, pk_mm_zk, pk_cb_zk)
 
     response = feedback / dmo
-    low_k = k <= 3.0e-4
-    k_ref = k[k <= 10.0]
-    low_k_ref = k_ref <= 3.0e-4
+    low_k = k <= 3.0e-4 * cosmo.h
+    k_ref = k[k <= 10.0 * cosmo.h]
+    low_k_ref = k_ref <= 3.0e-4 * cosmo.h
 
     np.testing.assert_allclose(response[:, low_k], 1.0, rtol=1.0e-3, atol=0.0)
 
     # We evaluate boost_ref_zk which is at redshift z, against boost_fast_out at z_fine.
     # We interpolate boost_ref_zk over redshift to match z_fine.
-    boost_fast_out_ref = boost_fast_out[:, k <= 10.0]
-    interp_boost_ref = jax.vmap(lambda boost_k: jnp.interp(z_fine, z, boost_k))(boost_ref_zk.T).T
-    np.testing.assert_allclose(boost_fast_out_ref[:, low_k_ref], interp_boost_ref[:, low_k_ref], rtol=1.0e-3, atol=0.0)
+    boost_fast_out_ref = boost_fast_out[:, k <= 10.0 * cosmo.h]
+    interp_boost_ref = jax.vmap(lambda boost_k: jnp.interp(z_fine, z, boost_k))(
+        boost_ref_zk.T
+    ).T
+    np.testing.assert_allclose(
+        boost_fast_out_ref[:, low_k_ref],
+        interp_boost_ref[:, low_k_ref],
+        rtol=1.0e-3,
+        atol=0.0,
+    )
 
 
 def test_hmcode_no_tweaks_preserves_one_halo_cutoff():
@@ -643,7 +609,9 @@ def test_hmcode_fixture_schema_check():
     np.testing.assert_allclose(k_can_z0.max(), 9.696137237434288, rtol=1e-5)
     assert np.all(np.isfinite(data_can)), "Canonical fixture contains non-finite values"
     assert np.all(k_can_z0 > 0), "Canonical fixture contains non-positive k values"
-    assert np.all(data_can[:, 2] > 0), "Canonical fixture pk_mm_lin contains non-positive values"
+    assert np.all(
+        data_can[:, 2] > 0
+    ), "Canonical fixture pk_mm_lin contains non-positive values"
 
     # --- support fixture schema ---
     raw_sup = support.read_text(encoding="utf-8")
@@ -663,24 +631,27 @@ def test_hmcode_fixture_schema_check():
     # --- split-contract: matching redshift grids ---
     z_can = np.unique(data_can[:, 0])
     z_sup = np.unique(data_sup[:, 0])
-    np.testing.assert_array_equal(z_can, z_sup,
-                                   err_msg="Canonical and support redshift grids differ")
+    np.testing.assert_array_equal(
+        z_can, z_sup, err_msg="Canonical and support redshift grids differ"
+    )
 
     # --- split-contract: canonical k is a subset of support k ---
     k_sup_set = set(np.round(k_sup_z0, 12))
     for k_val in np.round(k_can_z0, 12):
-        assert k_val in k_sup_set, (
-            f"Canonical k={k_val} not found in support k-grid; grids are not aligned"
-        )
+        assert (
+            k_val in k_sup_set
+        ), f"Canonical k={k_val} not found in support k-grid; grids are not aligned"
 
 
 def test_hmcode_dmo_invariant():
-    cosmo, z, k, pk_mm_zk, pk_cb_zk, _, _, dmo_ref_zk, _ = _class_feedback_reference_case()
+    cosmo, z, k, pk_mm_zk, pk_cb_zk, _, _, dmo_ref_zk, _ = (
+        _class_feedback_reference_case()
+    )
     # Ensure standard DMO response matches without regression
     dmo_out = hmcode_pmm(cosmo, z, k, pk_mm_zk, pk_cb_zk, T_AGN=None, nM=256)
 
-    k_ref = k[k <= 10.0]
-    dmo_out_ref = dmo_out[:, k <= 10.0]
+    k_ref = k[k <= 10.0 * cosmo.h]
+    dmo_out_ref = dmo_out[:, k <= 10.0 * cosmo.h]
 
     err = jnp.abs(dmo_out_ref - dmo_ref_zk) / dmo_ref_zk
     max_err = jnp.max(err)
@@ -773,9 +744,7 @@ def test_sigma_grid_includes_differentiable_high_k_continuation():
 
     assert sigma_extended > 1.1 * sigma_truncated
     gradient = jax.grad(
-        lambda amplitude: jnp.sum(
-            _sigma_grid_jax(k, amplitude * power, radius)
-        )
+        lambda amplitude: jnp.sum(_sigma_grid_jax(k, amplitude * power, radius))
     )(jnp.array(1.0))
     assert jnp.isfinite(gradient)
     assert gradient > 0.0
